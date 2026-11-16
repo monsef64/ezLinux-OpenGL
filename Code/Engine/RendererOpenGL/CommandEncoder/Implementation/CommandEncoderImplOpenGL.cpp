@@ -860,6 +860,8 @@ void ezGALCommandEncoderImplOpenGL::ApplyStencilReference()
     return;
 
   const auto* pState = static_cast<const ezGALDepthStencilStateOpenGL*>(m_DeviceOpenGL.GetDepthStencilState(hState));
+  if (pState == nullptr)
+    return;
   const auto& desc = pState->GetDescription();
 
   glStencilFuncSeparate(GL_FRONT, ezMappingTables::ToGLCompareFunc(desc.m_FrontFaceStencilOp.m_StencilFunc), m_uiStencilRef, desc.m_uiStencilReadMask);
@@ -1048,19 +1050,28 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredPipelineState()
     if (!pipelineDesc.m_hBlendState.IsInvalidated())
     {
       const auto* pState = static_cast<const ezGALBlendStateOpenGL*>(m_DeviceOpenGL.GetBlendState(pipelineDesc.m_hBlendState));
-      ApplyBlendState(pState->GetDescription(), m_uiColorTargetCount);
+      if (pState != nullptr)
+      {
+        ApplyBlendState(pState->GetDescription(), m_uiColorTargetCount);
+      }
     }
 
     if (!pipelineDesc.m_hDepthStencilState.IsInvalidated())
     {
       const auto* pState = static_cast<const ezGALDepthStencilStateOpenGL*>(m_DeviceOpenGL.GetDepthStencilState(pipelineDesc.m_hDepthStencilState));
-      ApplyDepthStencilState(pState->GetDescription());
+      if (pState != nullptr)
+      {
+        ApplyDepthStencilState(pState->GetDescription());
+      }
     }
 
     if (!pipelineDesc.m_hRasterizerState.IsInvalidated())
     {
       const auto* pState = static_cast<const ezGALRasterizerStateOpenGL*>(m_DeviceOpenGL.GetRasterizerState(pipelineDesc.m_hRasterizerState));
-      ApplyRasterizerState(pState->GetDescription());
+      if (pState != nullptr)
+      {
+        ApplyRasterizerState(pState->GetDescription());
+      }
     }
 
     m_bPipelineStateDirty = false;
