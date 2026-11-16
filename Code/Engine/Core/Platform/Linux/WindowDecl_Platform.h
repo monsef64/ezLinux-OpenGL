@@ -1,4 +1,3 @@
-
 #if EZ_ENABLED(EZ_SUPPORTS_GLFW)
 
 #  include <Core/Platform/GLFW/InputDevice_GLFW.h>
@@ -60,6 +59,6 @@ using ezWindowInternalHandle = ezWindowHandle;
 
 #else
 
-#  error "Linux has no native window support"
+#  include <Core/Platform/NoImpl/WindowDecl_NoImpl.h>
 
 #endif

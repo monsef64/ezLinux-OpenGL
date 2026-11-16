@@ -90,7 +90,9 @@ public:
     ezPlugin::LoadPlugin("ezInspectorPlugin", ezPluginLoadFlags::PluginIsOptional).IgnoreResult();
 
 
-#ifdef BUILDSYSTEM_ENABLE_VULKAN_SUPPORT
+#ifdef BUILDSYSTEM_ENABLE_OPENGL_SUPPORT
+    constexpr const char* szDefaultRenderer = "OpenGL";
+#elif defined(BUILDSYSTEM_ENABLE_VULKAN_SUPPORT)
     constexpr const char* szDefaultRenderer = "Vulkan";
 #else
     constexpr const char* szDefaultRenderer = "DX11";

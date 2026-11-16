@@ -24,14 +24,25 @@ ez_target_link_livepp(${PROJECT_NAME})
 if (EZ_CMAKE_PLATFORM_LINUX)
   CHECK_INCLUDE_FILE_CXX("uuid/uuid.h" UUID_HEADER)
 
+  # uuid/uuid.h is only used at compile time; Foundation has a fallback implementation
+  # (see Platform/Posix/UuidGenerator_Posix.h), so don't hard-fail when the dev package is missing.
   if(NOT UUID_HEADER)
-    message(FATAL_ERROR "Missing uuid/uuid.h. Have you installed the uuid-dev package?")
+    message(WARNING "Missing uuid/uuid.h. UUID generation will use the fallback implementation.")
+  endif()
+
+  find_library(UUID_LIBRARY NAMES uuid)
+
+  if(UUID_LIBRARY)
+    target_link_libraries(${PROJECT_NAME}
+      PRIVATE
+
+      ${UUID_LIBRARY}
+    )
   endif()
 
   target_link_libraries(${PROJECT_NAME}
     PRIVATE
 
-    uuid
     dl # dlopen, dlclose, etc
   )
 endif()

@@ -5,3 +5,7 @@ endif()
 if (TARGET RendererVulkan)
   add_dependencies(GameEngine RendererVulkan)
 endif()
+
+if (TARGET RendererOpenGL)
+  add_dependencies(GameEngine RendererOpenGL)
+endif()
