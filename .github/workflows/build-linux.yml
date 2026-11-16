@@ -116,7 +116,24 @@ jobs:
             -DEZ_BUILD_OPENGL=ON
 
       - name: Build
-        run: ninja -C Workspace/linux-gcc-debug GameEngine RendererOpenGL ShaderCompilerOpenGL RendererTest
+        # On failure, surface compiler errors as CI annotations (visible via the Checks API without
+        # needing the full job log).
+        run: |
+          set +e
+          ninja -C Workspace/linux-gcc-debug GameEngine RendererOpenGL ShaderCompilerOpenGL RendererTest > build.log 2>&1
+          code=$?
+          set -e
+          if [ $code -ne 0 ]; then
+            echo "=== build.log (last 150 lines) ==="
+            tail -150 build.log
+            echo "=== errors as annotations ==="
+            grep -E "FAILED:|error:|fatal error" build.log | head -40 | while read -r line; do
+              # strip ninja's FAILED: prefix and file noise a bit
+              echo "::error::${line:0:400}"
+            done
+            exit $code
+          fi
+          tail -5 build.log
 
       - name: Probe EGL (Mesa llvmpipe, surfaceless)
         run: |
