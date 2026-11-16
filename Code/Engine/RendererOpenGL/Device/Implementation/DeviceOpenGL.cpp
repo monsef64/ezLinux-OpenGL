@@ -229,6 +229,9 @@ ezResult ezGALDeviceOpenGL::InitEGL()
   ezLog::Info("OpenGL: EGL {0}.{1}, vendor '{2}', client APIs '{3}'", m_iEGLMajor, m_iEGLMinor, szVendor != nullptr ? szVendor : "<unknown>", szClientAPIs != nullptr ? szClientAPIs : "<unknown>");
 
   // Choose a config that is usable both for the hidden pbuffer and for window surfaces.
+  // Headless EGL platforms (e.g. Mesa's surfaceless platform) provide no WINDOW-capable
+  // configs, so fall back to a PBUFFER-only config in that case. Window swap-chains pick their
+  // own window-capable configs independently when a native window exists.
   const ezEGL::EGLint configAttribs[] = {
     ezEGL::EGL_RED_SIZE, 8,
     ezEGL::EGL_GREEN_SIZE, 8,
@@ -240,14 +243,44 @@ ezResult ezGALDeviceOpenGL::InitEGL()
     ezEGL::EGL_RENDERABLE_TYPE, ezEGL::EGL_OPENGL_BIT,
     ezEGL::EGL_NONE,
   };
+  const ezEGL::EGLint configAttribsPbufferOnly[] = {
+    ezEGL::EGL_RED_SIZE, 8,
+    ezEGL::EGL_GREEN_SIZE, 8,
+    ezEGL::EGL_BLUE_SIZE, 8,
+    ezEGL::EGL_ALPHA_SIZE, 8,
+    ezEGL::EGL_DEPTH_SIZE, 24,
+    ezEGL::EGL_STENCIL_SIZE, 8,
+    ezEGL::EGL_SURFACE_TYPE, ezEGL::EGL_PBUFFER_BIT,
+    ezEGL::EGL_RENDERABLE_TYPE, ezEGL::EGL_OPENGL_BIT,
+    ezEGL::EGL_NONE,
+  };
 
   ezEGL::EGLConfig config = nullptr;
   ezEGL::EGLint iConfigCount = 0;
-  if (m_pEGL->eglChooseConfig(m_pEGLDisplay, configAttribs, &config, 1, &iConfigCount) == 0 || iConfigCount == 0)
+  const ezEGL::EGLBoolean bChooseOk = m_pEGL->eglChooseConfig(m_pEGLDisplay, configAttribs, &config, 1, &iConfigCount);
+  if ((bChooseOk == 0 || iConfigCount == 0))
   {
-    ezLog::Error("eglChooseConfig failed (no suitable config found): {0}", ezStringView(ezEGL::GetErrorString(m_pEGL->eglGetError())));
-    DeinitEGL();
-    return EZ_FAILURE;
+    ezEGL::EGLConfig pbufferConfig = nullptr;
+    ezEGL::EGLint iPbufferConfigCount = 0;
+    const ezEGL::EGLBoolean bPbufferOk = m_pEGL->eglChooseConfig(m_pEGLDisplay, configAttribsPbufferOnly, &pbufferConfig, 1, &iPbufferConfigCount);
+    if (bPbufferOk != 0 && iPbufferConfigCount > 0)
+    {
+      ezLog::Info("OpenGL: no window-capable EGL config found; falling back to a pbuffer-only config (headless mode)");
+      config = pbufferConfig;
+      iConfigCount = iPbufferConfigCount;
+    }
+    else if (bChooseOk == 0)
+    {
+      ezLog::Error("eglChooseConfig failed: {0}", ezStringView(ezEGL::GetErrorString(m_pEGL->eglGetError())));
+      DeinitEGL();
+      return EZ_FAILURE;
+    }
+    else
+    {
+      ezLog::Error("eglChooseConfig failed (no suitable config found)");
+      DeinitEGL();
+      return EZ_FAILURE;
+    }
   }
 
   // Try to create a core profile context; fall back to a lower version if the driver refuses.
