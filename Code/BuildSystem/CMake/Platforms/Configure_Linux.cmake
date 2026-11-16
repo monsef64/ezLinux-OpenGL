@@ -5,6 +5,7 @@ message(STATUS "Configuring Platform: Linux")
 set_property(GLOBAL PROPERTY EZ_CMAKE_PLATFORM_LINUX ON)
 set_property(GLOBAL PROPERTY EZ_CMAKE_PLATFORM_POSIX ON)
 set_property(GLOBAL PROPERTY EZ_CMAKE_PLATFORM_SUPPORTS_VULKAN ON)
+set_property(GLOBAL PROPERTY EZ_CMAKE_PLATFORM_SUPPORTS_OPENGL ON)
 
 # #####################################
 # ## General settings
@@ -24,6 +25,7 @@ endif()
 macro(ez_platform_pull_properties)
 
     get_property(EZ_CMAKE_PLATFORM_LINUX GLOBAL PROPERTY EZ_CMAKE_PLATFORM_LINUX)
+    get_property(EZ_CMAKE_PLATFORM_SUPPORTS_OPENGL GLOBAL PROPERTY EZ_CMAKE_PLATFORM_SUPPORTS_OPENGL)
 
 endmacro()
 

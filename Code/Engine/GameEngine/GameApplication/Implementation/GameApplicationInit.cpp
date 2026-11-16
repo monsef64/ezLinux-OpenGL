@@ -31,10 +31,12 @@
 
 #if defined(BUILDSYSTEM_DEFAULT_RENDERER)
 constexpr const char* szDefaultRenderer = BUILDSYSTEM_DEFAULT_RENDERER;
-#elif defined(BUILDSYSTEM_ENABLE_D3D11_SUPPORT)
-constexpr const char* szDefaultRenderer = "DX11";
+#elif defined(BUILDSYSTEM_ENABLE_OPENGL_SUPPORT)
+constexpr const char* szDefaultRenderer = "OpenGL";
 #elif defined(BUILDSYSTEM_ENABLE_VULKAN_SUPPORT)
 constexpr const char* szDefaultRenderer = "Vulkan";
+#elif defined(BUILDSYSTEM_ENABLE_D3D11_SUPPORT)
+constexpr const char* szDefaultRenderer = "DX11";
 #else
 constexpr const char* szDefaultRenderer = "";
 #endif

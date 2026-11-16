@@ -91,7 +91,9 @@ ezResult ezGraphicsTest::CreateRenderer(ezGALDevice*& out_pDevice)
     EZ_SUCCEED_OR_RETURN(ezFileSystem::AddDataDirectory(sReadDir, "ImageComparisonDataDir"));
   }
 
-#ifdef BUILDSYSTEM_ENABLE_VULKAN_SUPPORT
+#ifdef BUILDSYSTEM_ENABLE_OPENGL_SUPPORT
+  constexpr const char* szDefaultRenderer = "OpenGL";
+#elif defined(BUILDSYSTEM_ENABLE_VULKAN_SUPPORT)
   constexpr const char* szDefaultRenderer = "Vulkan";
 #else
   constexpr const char* szDefaultRenderer = "DX11";
@@ -132,8 +134,17 @@ const ezGALDeviceCapabilities& ezGraphicsTest::GetDeviceCapabilities()
     pCaps = EZ_NEW(ezStaticsAllocatorWrapper::GetAllocator(), ezGALDeviceCapabilities);
     ezStartup::StartupCoreSystems();
     SetupRenderer().AssertSuccess();
-    const ezGALDeviceCapabilities& caps = ezGALDevice::GetDefaultDevice()->GetCapabilities();
-    *pCaps = caps;
+    const ezGALDevice* pDev = ezGALDevice::HasDefaultDevice() ? ezGALDevice::GetDefaultDevice() : nullptr;
+    if (pDev != nullptr)
+    {
+      *pCaps = pDev->GetCapabilities();
+    }
+    else
+    {
+      ezLog::Error("No default device was set, renderer device creation failed (no usable graphics driver?).");
+      // Make sure callers that index into m_FormatSupport (e.g. in SetupSubTests) stay in bounds.
+      pCaps->m_FormatSupport.SetCount(ezGALResourceFormat::ENUM_COUNT);
+    }
     ShutdownRenderer();
     ezStartup::ShutdownCoreSystems();
   }
@@ -171,7 +182,8 @@ void ezGraphicsTest::ShutdownRenderer()
   m_hShader.Invalidate();
   m_hCubeUV.Invalidate();
 
-  ezRenderContext::DeleteConstantBufferStorage(m_hObjectTransformCB);
+  if (!m_hObjectTransformCB.IsInvalidated())
+    ezRenderContext::DeleteConstantBufferStorage(m_hObjectTransformCB);
 
   ezStartup::ShutdownHighLevelSystems();
 

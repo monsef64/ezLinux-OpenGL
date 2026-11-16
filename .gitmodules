@@ -10,3 +10,6 @@
 [submodule "Code/ThirdParty/assimp"]
 	path = Code/ThirdParty/assimp
 	url = https://github.com/ezEngine/thirdparty-assimp
+[submodule "Code/ThirdParty/SPIRV-Cross"]
+	path = Code/ThirdParty/SPIRV-Cross
+	url = https://github.com/KhronosGroup/SPIRV-Cross.git

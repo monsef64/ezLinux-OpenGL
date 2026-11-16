@@ -10,6 +10,8 @@ macro(ez_requires_renderer)
 	# if nothing else is known, this platform doesn't support renderers
 	if(EZ_BUILD_EXPERIMENTAL_WEBGPU)
 		ez_requires_webgpu()
+	elseif(EZ_BUILD_OPENGL)
+		ez_requires_opengl()
 	elseif(EZ_BUILD_VULKAN)
 		ez_requires_vulkan()
 	elseif(EZ_BUILD_D3D11)
@@ -24,7 +26,7 @@ endmacro()
 # ## EZ_DEFAULT_RENDERER
 # #####################################
 
-set(EZ_DEFAULT_RENDERER "" CACHE STRING "The renderer to use by default when none is specified on the command line. Leave empty to auto-select (DX11 if built, else Vulkan).")
+set(EZ_DEFAULT_RENDERER "" CACHE STRING "The renderer to use by default when none is specified on the command line. Leave empty to auto-select (OpenGL if built, else Vulkan, else DX11).")
 
 # #####################################
 # ## ez_add_renderers(<target>)
@@ -32,6 +34,19 @@ set(EZ_DEFAULT_RENDERER "" CACHE STRING "The renderer to use by default when non
 # #####################################
 function(ez_add_renderers TARGET_NAME)
 	# PLATFORM-TODO
+	if(EZ_BUILD_OPENGL AND EZ_CMAKE_PLATFORM_SUPPORTS_OPENGL)
+		target_link_libraries(${TARGET_NAME}
+			PRIVATE
+			RendererOpenGL
+		)
+
+		if (TARGET ShaderCompilerOpenGL)
+			add_dependencies(${TARGET_NAME}
+				ShaderCompilerOpenGL
+			)
+		endif()
+	endif()
+
 	if(EZ_BUILD_VULKAN AND EZ_CMAKE_PLATFORM_SUPPORTS_VULKAN)
 		target_link_libraries(${TARGET_NAME}
 			PRIVATE

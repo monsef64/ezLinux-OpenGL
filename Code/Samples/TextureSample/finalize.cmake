@@ -5,3 +5,7 @@ endif()
 if (TARGET TextureSample AND TARGET RendererVulkan)
   add_dependencies(TextureSample RendererVulkan)
 endif()
+
+if (TARGET TextureSample AND TARGET RendererOpenGL)
+  add_dependencies(TextureSample RendererOpenGL)
+endif()
