@@ -184,6 +184,10 @@ jobs:
           grep -oP '(?<=Function: ).*' renderertest-clean.log | sed 's/^ *//' | cut -c1-120 | sort | uniq -c | sort -rn | head -15 | sed 's/^ */::notice::fn: /'
           echo "=== distinct error/message lines with counts ==="
           grep -oP '(?<=Error: ).*' renderertest-clean.log | sed 's/^ *//' | cut -c1-150 | sort | uniq -c | sort -rn | head -15 | sed 's/^ */::notice::err: /'
+          echo "=== last 15 lines (deduplicated) ==="
+          tail -15 renderertest-clean.log | sed 's/^ *//' | cut -c1-250 | sed 's/^/::notice::tail: /'
+          echo "=== shader failure context ==="
+          grep -B6 -A10 -iE "Failed to (compile|link)|Shader program creation failed" renderertest-clean.log | sed 's/^ *//' | cut -c1-250 | sed 's/^/::notice::shd: /' | head -40
           if grep -qE "Tests failed: [1-9]" renderertest.log; then
             echo "::warning::RendererTest reported failing suites. Expected until OpenGL reference images are captured; inspect the RendererTestOutput artifact."
           fi
