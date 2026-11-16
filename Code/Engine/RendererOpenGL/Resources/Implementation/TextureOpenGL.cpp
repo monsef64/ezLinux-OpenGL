@@ -6,6 +6,30 @@
 
 #include <Foundation/Types/ScopeExit.h>
 
+#include <cstring>
+
+// GL has no way to describe a row pitch for compressed texture uploads, so padded rows are repacked to tight rows here.
+static void RepackCompressedToTight(const ezGALSystemMemoryDescription& sourceData, ezUInt32 uiFullWidth, ezUInt32 uiFullHeight, ezUInt32 uiDepth, ezUInt32 uiBlockBytes, ezDynamicArray<ezUInt8>& out_storage)
+{
+  const ezUInt32 uiBlocksPerRow = (uiFullWidth + 3) / 4;
+  const ezUInt32 uiBlockRows = (uiFullHeight + 3) / 4;
+  const ezUInt32 uiTightRowPitch = uiBlocksPerRow * uiBlockBytes;
+  const ezUInt32 uiTightSlicePitch = uiTightRowPitch * uiBlockRows;
+
+  const ezUInt32 uiSourceRowPitch = sourceData.m_uiRowPitch;
+  const ezUInt32 uiSourceSlicePitch = sourceData.m_uiSlicePitch != 0 ? sourceData.m_uiSlicePitch : uiSourceRowPitch * uiBlockRows;
+
+  out_storage.SetCountUninitialized(uiTightSlicePitch * uiDepth);
+  const ezUInt8* pSrc = static_cast<const ezUInt8*>(sourceData.m_pData.GetPtr());
+  for (ezUInt32 z = 0; z < uiDepth; ++z)
+  {
+    for (ezUInt32 y = 0; y < uiBlockRows; ++y)
+    {
+      memcpy(out_storage.GetData() + z * uiTightSlicePitch + y * uiTightRowPitch, pSrc + static_cast<size_t>(z) * uiSourceSlicePitch + static_cast<size_t>(y) * uiSourceRowPitch, uiTightRowPitch);
+    }
+  }
+}
+
 ezGALTextureOpenGL::ezGALTextureOpenGL(const ezGALTextureCreationDescription& Description)
   : ezGALTexture(Description)
 {
@@ -287,13 +311,7 @@ ezResult ezGALTextureOpenGL::UploadInitialData(ezArrayPtr<ezGALSystemMemoryDescr
     {
       if (bCompressed)
       {
-        const ezUInt32 uiBlocksPerRow = (uiWidth + 3) / 4;
-        const ezUInt32 uiBytesPerRow = uiBlocksPerRow * uiBlockBytes;
-        if (desc.m_uiRowPitch != uiBytesPerRow)
-        {
-          ezLog::Error("Unsupported row pitch for compressed texture format {0}.", m_Description.m_Format.GetValue());
-          return EZ_FAILURE;
-        }
+        // Rows are repacked to tight rows below if the pitch differs; GL has no pitch parameter for compressed data.
       }
       else
       {
@@ -329,6 +347,18 @@ ezResult ezGALTextureOpenGL::UploadInitialData(ezArrayPtr<ezGALSystemMemoryDescr
     }
 
     const void* pData = desc.m_pData.GetPtr();
+
+    // Repack padded rows to tight rows; GL compressed uploads require tightly packed data.
+    ezDynamicArray<ezUInt8> repacked;
+    if (bCompressed && desc.m_uiRowPitch != 0)
+    {
+      const ezUInt32 uiBytesPerRow = ((uiWidth + 3) / 4) * uiBlockBytes;
+      if (desc.m_uiRowPitch != uiBytesPerRow)
+      {
+        RepackCompressedToTight(desc, uiWidth, uiHeight, eTarget == GL_TEXTURE_3D ? uiDepth : 1, uiBlockBytes, repacked);
+        pData = repacked.GetData();
+      }
+    }
 
     if (bCompressed)
     {
@@ -458,13 +488,7 @@ ezResult ezGALTextureOpenGL::UploadSubImage(const ezGALTextureSubresource& desti
         ezLog::Error("Compressed textures only support full-mip updates from the origin.");
         return EZ_FAILURE;
       }
-      const ezUInt32 uiBlocksPerRow = (uiWidth + 3) / 4;
-      const ezUInt32 uiBytesPerRow = uiBlocksPerRow * uiBlockBytes;
-      if (sourceData.m_uiRowPitch != uiBytesPerRow)
-      {
-        ezLog::Error("Unsupported row pitch for compressed texture format {0}.", m_Description.m_Format.GetValue());
-        return EZ_FAILURE;
-      }
+      // Rows are repacked to tight rows below if the pitch differs; GL has no pitch parameter for compressed data.
     }
     else
     {
@@ -501,6 +525,18 @@ ezResult ezGALTextureOpenGL::UploadSubImage(const ezGALTextureSubresource& desti
     glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, iUnpackImageHeight);
 
   const void* pData = sourceData.m_pData.GetPtr();
+
+  // Repack padded rows to tight rows; GL compressed uploads require tightly packed data.
+  ezDynamicArray<ezUInt8> repacked;
+  if (bCompressed && sourceData.m_uiRowPitch != 0)
+  {
+    const ezUInt32 uiBytesPerRow = ((uiWidth + 3) / 4) * uiBlockBytes;
+    if (sourceData.m_uiRowPitch != uiBytesPerRow)
+    {
+      RepackCompressedToTight(sourceData, uiWidth, uiHeight, eTarget == GL_TEXTURE_3D ? uiDepth : 1, uiBlockBytes, repacked);
+      pData = repacked.GetData();
+    }
+  }
 
   if (bCompressed)
   {
