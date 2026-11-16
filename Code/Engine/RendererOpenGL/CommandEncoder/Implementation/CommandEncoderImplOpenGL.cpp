@@ -1,5 +1,5 @@
-#include <RendererOpenGL/RendererOpenGLPCH.h>
 #include <RendererOpenGL/Pools/QueryPoolOpenGL.h>
+#include <RendererOpenGL/RendererOpenGLPCH.h>
 
 #include <Foundation/Math/Rect.h>
 #include <Foundation/Types/ScopeExit.h>
@@ -37,6 +37,9 @@ static constexpr ezUInt32 EZ_GL_PUSH_CONSTANT_BUFFER_START_SIZE = 256;
 ezGALCommandEncoderImplOpenGL::ezGALCommandEncoderImplOpenGL(ezGALDeviceOpenGL& ref_device)
   : m_DeviceOpenGL(ref_device)
 {
+  // Static arrays are empty until EnsureCount() is called; indexing them before that is out-of-bounds.
+  m_BoundVertexBuffers.EnsureCount(EZ_GAL_MAX_VERTEX_BUFFER_COUNT);
+  m_VertexBufferOffsets.EnsureCount(EZ_GAL_MAX_VERTEX_BUFFER_COUNT);
   for (ezUInt32 i = 0; i < EZ_GAL_MAX_VERTEX_BUFFER_COUNT; i++)
   {
     m_BoundVertexBuffers[i] = nullptr;
@@ -803,8 +806,8 @@ void ezGALCommandEncoderImplOpenGL::SetGraphicsPipelinePlatform(const ezGALGraph
   m_pBoundComputePipeline = nullptr;
 
   const ezGALShaderOpenGL* pShader = pGLPipeline != nullptr
-    ? static_cast<const ezGALShaderOpenGL*>(m_DeviceOpenGL.GetShader(pGLPipeline->GetDescription().m_hShader))
-    : nullptr;
+                                       ? static_cast<const ezGALShaderOpenGL*>(m_DeviceOpenGL.GetShader(pGLPipeline->GetDescription().m_hShader))
+                                       : nullptr;
   glUseProgram(pShader != nullptr ? pShader->GetProgram() : 0);
 
   m_bPipelineStateDirty = true;
@@ -818,8 +821,8 @@ void ezGALCommandEncoderImplOpenGL::SetComputePipelinePlatform(const ezGALComput
   m_pBoundGraphicsPipeline = nullptr;
 
   const ezGALShaderOpenGL* pShader = pGLPipeline != nullptr
-    ? static_cast<const ezGALShaderOpenGL*>(m_DeviceOpenGL.GetShader(pGLPipeline->GetDescription().m_hShader))
-    : nullptr;
+                                       ? static_cast<const ezGALShaderOpenGL*>(m_DeviceOpenGL.GetShader(pGLPipeline->GetDescription().m_hShader))
+                                       : nullptr;
   glUseProgram(pShader != nullptr ? pShader->GetProgram() : 0);
 
   m_bResourceStateDirty = true;
@@ -1052,7 +1055,10 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredPipelineState()
   ApplyViewportAndScissor();
 }
 
-constexpr GLenum ToGLDrawBuffers(ezUInt32 i) { return GL_COLOR_ATTACHMENT0 + i; }
+constexpr GLenum ToGLDrawBuffers(ezUInt32 i)
+{
+  return GL_COLOR_ATTACHMENT0 + i;
+}
 
 void ezGALCommandEncoderImplOpenGL::SetDrawBuffersMask(ezUInt32 uiMask)
 {
@@ -1334,8 +1340,10 @@ void ezGALCommandEncoderImplOpenGL::BeginRenderingPlatform(const ezGALRenderingS
     glClearStencil(renderingSetup.GetClearStencil());
 
     GLbitfield eBits = 0;
-    if (bClearDepth) eBits |= GL_DEPTH_BUFFER_BIT;
-    if (bClearStencil) eBits |= GL_STENCIL_BUFFER_BIT;
+    if (bClearDepth)
+      eBits |= GL_DEPTH_BUFFER_BIT;
+    if (bClearStencil)
+      eBits |= GL_STENCIL_BUFFER_BIT;
     glClear(eBits);
 
     // Re-apply depth / stencil masks from the depth-stencil state.
@@ -1388,7 +1396,8 @@ void ezGALCommandEncoderImplOpenGL::ClearPlatform(const ezColor& clearColor, ezU
 {
   if (uiRenderTargetClearMask != 0 && m_uiColorTargetCount > 0)
   {
-    const GLint iPrevDrawFBO = []() -> GLint {
+    const GLint iPrevDrawFBO = []() -> GLint
+    {
       GLint i = 0;
       glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &i);
       return i;
@@ -1441,8 +1450,10 @@ void ezGALCommandEncoderImplOpenGL::ClearPlatform(const ezColor& clearColor, ezU
     glClearStencil(uiStencilClear);
 
     GLbitfield eBits = 0;
-    if (bClearDepth) eBits |= GL_DEPTH_BUFFER_BIT;
-    if (bClearStencil) eBits |= GL_STENCIL_BUFFER_BIT;
+    if (bClearDepth)
+      eBits |= GL_DEPTH_BUFFER_BIT;
+    if (bClearStencil)
+      eBits |= GL_STENCIL_BUFFER_BIT;
     glClear(eBits);
 
     m_bPipelineStateDirty = true; // restore depth/stencil masks
