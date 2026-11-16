@@ -483,9 +483,20 @@ ezResult ezGALTextureOpenGL::UploadSubImage(const ezGALTextureSubresource& desti
   {
     if (bCompressed)
     {
-      if (uiX != 0 || uiY != 0 || uiZ != 0 || uiWidth != uiFullWidth || uiHeight != uiFullHeight)
+      // GL compressed updates require block-aligned x/y offsets. The box may end at a ragged right/bottom edge.
+      if ((uiX % 4) != 0 || (uiY % 4) != 0)
       {
-        ezLog::Error("Compressed textures only support full-mip updates from the origin.");
+        ezLog::Error("Compressed texture updates require block-aligned x/y offsets (format {0}).", m_Description.m_Format.GetValue());
+        return EZ_FAILURE;
+      }
+      if ((uiWidth % 4) != 0 && (uiX + uiWidth) != uiFullWidth)
+      {
+        ezLog::Error("Compressed texture update width must be a multiple of 4 or reach the right edge (format {0}).", m_Description.m_Format.GetValue());
+        return EZ_FAILURE;
+      }
+      if ((uiHeight % 4) != 0 && (uiY + uiHeight) != uiFullHeight)
+      {
+        ezLog::Error("Compressed texture update height must be a multiple of 4 or reach the bottom edge (format {0}).", m_Description.m_Format.GetValue());
         return EZ_FAILURE;
       }
       // Rows are repacked to tight rows below if the pitch differs; GL has no pitch parameter for compressed data.
@@ -545,14 +556,14 @@ ezResult ezGALTextureOpenGL::UploadSubImage(const ezGALTextureSubresource& desti
     switch (eTarget)
     {
       case GL_TEXTURE_3D:
-        glCompressedTexSubImage3D(eTarget, uiMipLevel, 0, 0, 0, uiWidth, uiHeight, uiDepth, eInternal, uiImageSize, pData);
+        glCompressedTexSubImage3D(eTarget, uiMipLevel, static_cast<GLint>(uiX), static_cast<GLint>(uiY), static_cast<GLint>(uiZ), uiWidth, uiHeight, uiDepth, eInternal, uiImageSize, pData);
         break;
       case GL_TEXTURE_2D_ARRAY:
       case GL_TEXTURE_CUBE_MAP_ARRAY:
-        glCompressedTexSubImage3D(eTarget, uiMipLevel, 0, 0, static_cast<GLint>(uiSlice), uiWidth, uiHeight, 1, eInternal, uiImageSize, pData);
+        glCompressedTexSubImage3D(eTarget, uiMipLevel, static_cast<GLint>(uiX), static_cast<GLint>(uiY), static_cast<GLint>(uiSlice), uiWidth, uiHeight, 1, eInternal, uiImageSize, pData);
         break;
       default:
-        glCompressedTexSubImage2D(FaceTarget(eTarget, uiSlice), uiMipLevel, 0, 0, uiWidth, uiHeight, eInternal, uiImageSize, pData);
+        glCompressedTexSubImage2D(FaceTarget(eTarget, uiSlice), uiMipLevel, static_cast<GLint>(uiX), static_cast<GLint>(uiY), uiWidth, uiHeight, eInternal, uiImageSize, pData);
         break;
     }
     return EZ_SUCCESS;
