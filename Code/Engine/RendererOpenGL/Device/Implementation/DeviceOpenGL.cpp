@@ -1,5 +1,6 @@
 #include <RendererOpenGL/RendererOpenGLPCH.h>
 
+#include <Core/ResourceManager/Resource.h>
 #include <Core/System/Window.h>
 #include <Foundation/Configuration/Startup.h>
 #include <Foundation/Profiling/Profiling.h>
@@ -47,6 +48,12 @@ EZ_BEGIN_SUBSYSTEM_DECLARATION(RendererOpenGL, DeviceFactoryOpenGL)
 
 ON_CORESYSTEMS_STARTUP
 {
+  // Force graphics resource updates onto the main thread.
+  // ezEngine otherwise updates shaders, textures and meshes on worker threads. The OpenGL backend uses a single GL
+  // context that is current only on the main thread, so GAL resource creation on worker threads is not possible without
+  // per-thread shared EGL contexts. ezResource::UpdateGraphicsResource is the renderer-configured knob for this.
+  ezResource::UpdateGraphicsResource = ezResource::DoUpdate::OnMainThread;
+
   // The OpenGL backend consumes SPIR-V bytecode that is converted to GLSL at load time.
   // It therefore registers its own shader model ("OPENGL") together with the ezShaderCompilerOpenGL
   // plugin, which inherits the DXC based SPIR-V compiler from ezShaderCompilerVulkan. The shaders
@@ -66,6 +73,10 @@ EZ_END_SUBSYSTEM_DECLARATION;
 ezGALDeviceOpenGL::ezGALDeviceOpenGL(const ezGALDeviceCreationDescription& Description)
   : ezGALDevice(Description)
 {
+  // Same configuration as ON_CORESYSTEMS_STARTUP above; repeated here so it also applies
+  // when the backend is only linked and the subsystem has not been started yet.
+  // The single GL context is only current on the main thread.
+  ezResource::UpdateGraphicsResource = ezResource::DoUpdate::OnMainThread;
 }
 
 ezGALDeviceOpenGL::~ezGALDeviceOpenGL() = default;
