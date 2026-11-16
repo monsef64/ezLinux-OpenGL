@@ -90,11 +90,17 @@ namespace ezEGL
 
   static constexpr EGLNativeDisplayType EGL_DEFAULT_DISPLAY_HANDLE = nullptr;
 
+  // EGL client APIs (eglBindAPI)
+  static constexpr EGLenum EGL_OPENGL_API = 0x30A2;
+  static constexpr EGLenum EGL_OPENGL_ES_API = 0x30A0;
+  static constexpr EGLenum EGL_OPENVG_API = 0x30A1;
+
   /// All EGL functions that are used by the backend, loaded from libEGL.so.1.
   struct FunctionTable
   {
     EGLDisplay (*eglGetDisplay)(EGLNativeDisplayType display_id) = nullptr;
     EGLBoolean (*eglInitialize)(EGLDisplay dpy, EGLint* major, EGLint* minor) = nullptr;
+    EGLBoolean (*eglBindAPI)(EGLenum api) = nullptr;
     EGLBoolean (*eglTerminate)(EGLDisplay dpy) = nullptr;
     EGLBoolean (*eglGetConfigs)(EGLDisplay dpy, EGLConfig* configs, EGLint config_size, EGLint* num_config) = nullptr;
     EGLBoolean (*eglChooseConfig)(EGLDisplay dpy, const EGLint* attrib_list, EGLConfig* configs, EGLint config_size, EGLint* num_config) = nullptr;

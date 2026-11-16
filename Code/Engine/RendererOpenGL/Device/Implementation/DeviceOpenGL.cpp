@@ -228,30 +228,56 @@ ezResult ezGALDeviceOpenGL::InitEGL()
   const char* szClientAPIs = m_pEGL->eglQueryString(m_pEGLDisplay, 0x308D /* EGL_CLIENT_APIS */);
   ezLog::Info("OpenGL: EGL {0}.{1}, vendor '{2}', client APIs '{3}'", m_iEGLMajor, m_iEGLMinor, szVendor != nullptr ? szVendor : "<unknown>", szClientAPIs != nullptr ? szClientAPIs : "<unknown>");
 
+  // The initial client API is EGL_OPENGL_ES_API. Desktop OpenGL context creation requires
+  // binding the OpenGL client API first, otherwise eglCreateContext fails with EGL_BAD_MATCH
+  // (e.g. on Mesa).
+  if (m_pEGL->eglBindAPI == nullptr || m_pEGL->eglBindAPI(ezEGL::EGL_OPENGL_API) == 0)
+  {
+    ezLog::Error("eglBindAPI(EGL_OPENGL_API) failed: {0}", m_pEGL->eglBindAPI == nullptr ? ezStringView("symbol not found") : ezStringView(ezEGL::GetErrorString(m_pEGL->eglGetError())));
+    DeinitEGL();
+    return EZ_FAILURE;
+  }
+
   // Choose a config that is usable both for the hidden pbuffer and for window surfaces.
   // Headless EGL platforms (e.g. Mesa's surfaceless platform) provide no WINDOW-capable
   // configs, so fall back to a PBUFFER-only config in that case. Window swap-chains pick their
   // own window-capable configs independently when a native window exists.
   const ezEGL::EGLint configAttribs[] = {
-    ezEGL::EGL_RED_SIZE, 8,
-    ezEGL::EGL_GREEN_SIZE, 8,
-    ezEGL::EGL_BLUE_SIZE, 8,
-    ezEGL::EGL_ALPHA_SIZE, 8,
-    ezEGL::EGL_DEPTH_SIZE, 24,
-    ezEGL::EGL_STENCIL_SIZE, 8,
-    ezEGL::EGL_SURFACE_TYPE, ezEGL::EGL_WINDOW_BIT | ezEGL::EGL_PBUFFER_BIT,
-    ezEGL::EGL_RENDERABLE_TYPE, ezEGL::EGL_OPENGL_BIT,
+    ezEGL::EGL_RED_SIZE,
+    8,
+    ezEGL::EGL_GREEN_SIZE,
+    8,
+    ezEGL::EGL_BLUE_SIZE,
+    8,
+    ezEGL::EGL_ALPHA_SIZE,
+    8,
+    ezEGL::EGL_DEPTH_SIZE,
+    24,
+    ezEGL::EGL_STENCIL_SIZE,
+    8,
+    ezEGL::EGL_SURFACE_TYPE,
+    ezEGL::EGL_WINDOW_BIT | ezEGL::EGL_PBUFFER_BIT,
+    ezEGL::EGL_RENDERABLE_TYPE,
+    ezEGL::EGL_OPENGL_BIT,
     ezEGL::EGL_NONE,
   };
   const ezEGL::EGLint configAttribsPbufferOnly[] = {
-    ezEGL::EGL_RED_SIZE, 8,
-    ezEGL::EGL_GREEN_SIZE, 8,
-    ezEGL::EGL_BLUE_SIZE, 8,
-    ezEGL::EGL_ALPHA_SIZE, 8,
-    ezEGL::EGL_DEPTH_SIZE, 24,
-    ezEGL::EGL_STENCIL_SIZE, 8,
-    ezEGL::EGL_SURFACE_TYPE, ezEGL::EGL_PBUFFER_BIT,
-    ezEGL::EGL_RENDERABLE_TYPE, ezEGL::EGL_OPENGL_BIT,
+    ezEGL::EGL_RED_SIZE,
+    8,
+    ezEGL::EGL_GREEN_SIZE,
+    8,
+    ezEGL::EGL_BLUE_SIZE,
+    8,
+    ezEGL::EGL_ALPHA_SIZE,
+    8,
+    ezEGL::EGL_DEPTH_SIZE,
+    24,
+    ezEGL::EGL_STENCIL_SIZE,
+    8,
+    ezEGL::EGL_SURFACE_TYPE,
+    ezEGL::EGL_PBUFFER_BIT,
+    ezEGL::EGL_RENDERABLE_TYPE,
+    ezEGL::EGL_OPENGL_BIT,
     ezEGL::EGL_NONE,
   };
 
@@ -285,16 +311,23 @@ ezResult ezGALDeviceOpenGL::InitEGL()
 
   // Try to create a core profile context; fall back to a lower version if the driver refuses.
   const ezEGL::EGLint contextAttribs45[] = {
-    ezEGL::EGL_CONTEXT_MAJOR_VERSION_KHR, 4,
-    ezEGL::EGL_CONTEXT_MINOR_VERSION_KHR, 5,
-    ezEGL::EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR, ezEGL::EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
-    ezEGL::EGL_CONTEXT_FLAGS_KHR, m_Description.m_bDebugDevice ? ezEGL::EGL_CONTEXT_OPENGL_DEBUG_BIT_KHR : 0,
+    ezEGL::EGL_CONTEXT_MAJOR_VERSION_KHR,
+    4,
+    ezEGL::EGL_CONTEXT_MINOR_VERSION_KHR,
+    5,
+    ezEGL::EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR,
+    ezEGL::EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
+    ezEGL::EGL_CONTEXT_FLAGS_KHR,
+    m_Description.m_bDebugDevice ? ezEGL::EGL_CONTEXT_OPENGL_DEBUG_BIT_KHR : 0,
     ezEGL::EGL_NONE,
   };
   const ezEGL::EGLint contextAttribs33[] = {
-    ezEGL::EGL_CONTEXT_MAJOR_VERSION_KHR, 3,
-    ezEGL::EGL_CONTEXT_MINOR_VERSION_KHR, 3,
-    ezEGL::EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR, ezEGL::EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
+    ezEGL::EGL_CONTEXT_MAJOR_VERSION_KHR,
+    3,
+    ezEGL::EGL_CONTEXT_MINOR_VERSION_KHR,
+    3,
+    ezEGL::EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR,
+    ezEGL::EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
     ezEGL::EGL_NONE,
   };
 
@@ -316,8 +349,10 @@ ezResult ezGALDeviceOpenGL::InitEGL()
   ezEGL::EGLConfig usedConfig = config;
 
   const ezEGL::EGLint pbufferAttribs[] = {
-    ezEGL::EGL_WIDTH, 1,
-    ezEGL::EGL_HEIGHT, 1,
+    ezEGL::EGL_WIDTH,
+    1,
+    ezEGL::EGL_HEIGHT,
+    1,
     ezEGL::EGL_NONE,
   };
   m_pPbufferSurface = m_pEGL->eglCreatePbufferSurface(m_pEGLDisplay, usedConfig, pbufferAttribs);
