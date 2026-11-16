@@ -980,18 +980,11 @@ ezEnum<ezGALAsyncResult> ezGALDeviceOpenGL::GetFenceResultPlatform(ezGALFenceHan
 
   const GLenum res = glClientWaitSync(fence, flags, uiTimeoutNs);
 
+  // Fences can be queried multiple times (e.g. GetReadbackResult() followed by LockTexture() re-queries the
+  // same fence), so a fence must remain valid after it was signaled. Sync objects stay alive until glDeleteSync;
+  // only frame-submit fences are reclaimed in ReclaimFinishedFrames(), everything else lives until shutdown.
   if (res == GL_ALREADY_SIGNALED || res == GL_CONDITION_SATISFIED)
   {
-    EraseFenceInternal(m_Fences, fence);
-    glDeleteSync(fence);
-    for (PerFrameData& data : m_PerFrameData)
-    {
-      if (data.m_hFence == hFence)
-      {
-        data.m_hFence = {};
-        data.m_uiFrame = ezUInt64(-1);
-      }
-    }
     return ezGALAsyncResult::Ready;
   }
   else if (res == GL_TIMEOUT_EXPIRED)
@@ -1000,8 +993,6 @@ ezEnum<ezGALAsyncResult> ezGALDeviceOpenGL::GetFenceResultPlatform(ezGALFenceHan
   }
 
   EZ_REPORT_FAILURE("glClientWaitSync failed with GL_WAIT_FAILED");
-  EraseFenceInternal(m_Fences, fence);
-  glDeleteSync(fence);
   return ezGALAsyncResult::Expired;
 }
 
