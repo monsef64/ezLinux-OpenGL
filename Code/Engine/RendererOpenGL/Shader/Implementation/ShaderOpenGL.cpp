@@ -110,14 +110,14 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
       compilers[stage] = new spirv_cross::CompilerGLSL(pSpirv, uiSpirvCount);
 
       // The SPIR-V uses Vulkan-style separate texture and sampler objects. GLSL has no separate
-      // texture/sampler, so the images and samplers must be combined into combined image samplers
+      // texture/sampler, so the aliased images and samplers must be combined into combined image samplers
       // before resource collection or compilation, otherwise the GLSL backend throws
       // "Cannot find mapping for combined sampler, was build_combined_image_samplers() used?".
-      compilers[stage]->build_combined_image_samplers();
-
-      // Shaders that use texelFetch / imageLoad without a sampler get a dummy sampler here,
-      // otherwise compilation fails with 'texelFetch without sampler was found, but no dummy sampler has been created'.
+      // Shaders that use texelFetch / imageLoad without a sampler need a dummy sampler first;
+      // creating it must happen BEFORE build_combined_image_samplers(), which is where the
+      // 'texelFetch without sampler' error is raised.
       compilers[stage]->build_dummy_sampler_for_combined_images();
+      compilers[stage]->build_combined_image_samplers();
     }
     catch (const spirv_cross::CompilerError& e)
     {
