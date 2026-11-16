@@ -1,0 +1,69 @@
+name: Build Linux
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (ubuntu-latest, gcc, linux-gcc-debug)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        # Data/Content and Data/Tools/Precompiled are very large and are not needed to build.
+        # The ThirdParty submodules are initialized explicitly below.
+        with:
+          submodules: false
+
+      - name: Initialize ThirdParty submodules
+        run: git submodule update --init --depth 1 Code/ThirdParty/assimp Code/ThirdParty/fmod Code/ThirdParty/SPIRV-Cross
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build git ca-certificates
+        # ubuntu-latest currently ships CMake >= 4 (configure passes -DCMAKE_POLICY_VERSION_MINIMUM=3.5).
+        # EGL/GL are loaded at runtime via dlopen (see EGLLoader), so no Mesa dev packages are needed here.
+
+      - name: Configure (linux-gcc-debug)
+        # Mirrors the configuration verified to configure and build from scratch.
+        # Notes:
+        # - CMAKE_POLICY_VERSION_MINIMUM=3.5 is required because ubuntu-latest ships CMake >= 4, which
+        #   removed compatibility with cmake_minimum_required < 3.5 (SPIRV-Cross declares 3.1).
+        #   Without it, configure fails with: Compatibility with CMake < 3.5 has been removed from CMake.
+        # - Vulkan is OFF: on Linux it downloads the DXC toolchain from a GitHub release asset on first
+        #   configure (that works on GitHub-hosted runners), but the Linux Vulkan build is not yet
+        #   validated. Enable EZ_BUILD_VULKAN=ON once it is; that also builds ezShaderCompilerOpenGL,
+        #   which requires the DXC-based shader compiler toolchain.
+        # - GLFW is OFF: the X11/GLFW window path is optional; without it the engine falls back to the
+        #   NoImpl window, which is all that is needed to compile the engine and tests.
+        # - Qt, RMLUI and OpenXR are OFF for the same reason: not required for a plain build.
+        run: |
+          cmake --preset linux-gcc-debug \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DEZ_ENABLE_QT_SUPPORT=OFF \
+            -DEZ_BUILD_RMLUI=OFF \
+            -DEZ_BUILD_OPENXR=OFF \
+            -DEZ_BUILD_VULKAN=OFF \
+            -DEZ_3RDPARTY_GLFW_SUPPORT=OFF \
+            -DEZ_BUILD_OPENGL=ON
+
+      - name: Build
+        run: ninja -C Workspace/linux-gcc-debug GameEngine RendererOpenGL RendererTest MeshRenderSample TextureSample ShaderExplorer
+
+      - name: Artifact - Binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-gcc-debug-binaries
+          path: Output/Bin/LinuxNinjaGccDebug64
+          retention-days: 3
