@@ -19,6 +19,8 @@ if(EZ_BUILD_VULKAN AND EZ_CMAKE_PLATFORM_SUPPORTS_VULKAN)
 
   target_link_libraries(${PROJECT_NAME}
     PUBLIC
+    Foundation
+    RendererCore
     ShaderCompilerVulkan
   )
 
