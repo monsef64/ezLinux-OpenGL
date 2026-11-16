@@ -87,13 +87,13 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
   spirv_cross::CompilerGLSL* compilers[ezGALShaderStage::ENUM_COUNT] = {nullptr};
 
   // Ensure all compilers are deleted when leaving this scope.
-  auto finally = ezMakeScopeExit([&] {
+  auto finally = ezMakeScopeExit([&]
+    {
     for (auto*& p : compilers)
     {
       delete p;
       p = nullptr;
-    }
-  });
+    } });
 
   // Parse all stages first.
   for (ezUInt32 stage = 0; stage < ezGALShaderStage::ENUM_COUNT; stage++)
@@ -108,6 +108,12 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
     try
     {
       compilers[stage] = new spirv_cross::CompilerGLSL(pSpirv, uiSpirvCount);
+
+      // The SPIR-V uses Vulkan-style separate texture and sampler objects. GLSL has no separate
+      // texture/sampler, so the images and samplers must be combined into combined image samplers
+      // before resource collection or compilation, otherwise the GLSL backend throws
+      // "Cannot find mapping for combined sampler, was build_combined_image_samplers() used?".
+      compilers[stage]->build_combined_image_samplers();
     }
     catch (const spirv_cross::CompilerError& e)
     {
@@ -123,7 +129,8 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
   ezUInt32 uiNextImageUnit = 0;
   ezUInt32 uiNextAtomicCounter = 0;
 
-  auto FindOrAddEntry = [&flatEntries](BindingClass cls, ezInt16 iBindGroup, ezInt16 iSlot) -> FlatBindingEntry& {
+  auto FindOrAddEntry = [&flatEntries](BindingClass cls, ezInt16 iBindGroup, ezInt16 iSlot) -> FlatBindingEntry&
+  {
     for (auto& entry : flatEntries)
     {
       if (entry.m_Class == cls && entry.m_iBindGroup == iBindGroup && entry.m_iSlot == iSlot)
@@ -139,7 +146,8 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
     return flatEntries.PeekBack();
   };
 
-  auto addResourceList = [&](spirv_cross::CompilerGLSL* pCompiler, const spirv_cross::SmallVector<spirv_cross::Resource>& list, BindingClass cls) {
+  auto addResourceList = [&](spirv_cross::CompilerGLSL* pCompiler, const spirv_cross::SmallVector<spirv_cross::Resource>& list, BindingClass cls)
+  {
     for (const auto& resource : list)
     {
       const ezInt32 iBindGroup = static_cast<ezInt32>(pCompiler->get_decoration(resource.id, spv::DecorationDescriptorSet));
@@ -222,7 +230,8 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
     m_FlatBindings.Insert(MakeFlatBindingKey(entry.m_Class, entry.m_iBindGroup, entry.m_iSlot), entry.m_uiFlat);
   }
 
-  auto RemapResourceList = [&](spirv_cross::CompilerGLSL* pCompiler, const spirv_cross::SmallVector<spirv_cross::Resource>& list, BindingClass cls) {
+  auto RemapResourceList = [&](spirv_cross::CompilerGLSL* pCompiler, const spirv_cross::SmallVector<spirv_cross::Resource>& list, BindingClass cls)
+  {
     for (const auto& resource : list)
     {
       const ezInt32 iBindGroup = static_cast<ezInt32>(pCompiler->get_decoration(resource.id, spv::DecorationDescriptorSet));
@@ -309,7 +318,8 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
 
   GLuint stageShaders[ezGALShaderStage::ENUM_COUNT] = {0};
 
-  auto cleanupShaders = ezMakeScopeExit([&] {
+  auto cleanupShaders = ezMakeScopeExit([&]
+    {
     for (auto& s : stageShaders)
     {
       if (s != 0)
@@ -317,8 +327,7 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
         glDeleteShader(s);
         s = 0;
       }
-    }
-  });
+    } });
 
   for (ezUInt32 stage = 0; stage < ezGALShaderStage::ENUM_COUNT; stage++)
   {
