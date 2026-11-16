@@ -114,6 +114,10 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
       // before resource collection or compilation, otherwise the GLSL backend throws
       // "Cannot find mapping for combined sampler, was build_combined_image_samplers() used?".
       compilers[stage]->build_combined_image_samplers();
+
+      // Shaders that use texelFetch / imageLoad without a sampler get a dummy sampler here,
+      // otherwise compilation fails with 'texelFetch without sampler was found, but no dummy sampler has been created'.
+      compilers[stage]->build_dummy_sampler_for_combined_images();
     }
     catch (const spirv_cross::CompilerError& e)
     {

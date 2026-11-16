@@ -177,10 +177,10 @@ jobs:
           echo "=== consolidated diagnostics as a single annotation ==="
           sed -r 's/\x1b\[[0-9;]*m//g' renderertest.log > renderertest-clean.log
           L=$(wc -l < renderertest-clean.log)
-          TAIL=$(tail -18 renderertest-clean.log | sed 's/^ *//' | tr -d '\r' | cut -c1-160 | sed '/^$/d' | tr '\n' '~' )
+          TAIL=$(tail -10 renderertest-clean.log | sed 's/^ *//' | tr -d '\r' | cut -c1-160 | sed '/^$/d' | tr '\n' '~' )
           echo "::notice::lines=$L tail: ${TAIL:0:2900}"
-          SHD=$(grep -B4 -A8 -iE "Failed to (compile|link)|Shader program creation failed" renderertest-clean.log | sed 's/^ *//' | cut -c1-150 | sed '/^$/d' | tr '\n' '~')
-          echo "::notice::shdctx: ${SHD:0:2900}"
+          ALLE=$(grep -E "ezLog Error|^Error:" renderertest-clean.log | sed 's/^ *//' | cut -c1-130 | sed 's/[0-9a-fA-F]\{6,\}/HEX/g' | sort | uniq -c | sort -rn | head -25 | sed 's/^/  /' | tr '\n' '~')
+          echo "::notice::allerrors: ${ALLE:0:2900}"
           if grep -qE "Tests failed: [1-9]" renderertest.log; then
             echo "::warning::RendererTest reported failing suites. Expected until OpenGL reference images are captured; inspect the RendererTestOutput artifact."
           fi
