@@ -128,7 +128,7 @@ jobs:
             echo "=== build.log (last 150 lines) ==="
             tail -150 build.log
             echo "=== errors as annotations ==="
-            grep -E "FAILED:|error:|fatal error" build.log | head -40 | while read -r line; do
+            grep -E "FAILED:|error:|fatal error|undefined reference|cannot find|collect2|ld: |ld returned" build.log | head -40 | while read -r line; do
               # strip ninja's FAILED: prefix and file noise a bit
               echo "::error::${line:0:400}"
             done
