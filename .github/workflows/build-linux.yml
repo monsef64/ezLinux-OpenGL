@@ -69,8 +69,10 @@ jobs:
           retention-days: 3
 
   test-renderer:
-    name: RendererTest (ubuntu-latest, OpenGL via Mesa llvmpipe)
-    runs-on: ubuntu-latest
+    name: RendererTest (ubuntu-24.04, OpenGL via Mesa llvmpipe)
+    # Pinned to 24.04: ubuntu-latest has moved to Ubuntu 26 where the Mesa package names
+    # changed; 24.04 (noble) ships the documented mesa names used below.
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
 
     steps:
@@ -87,12 +89,15 @@ jobs:
           sudo apt-get update
           # Mesa (llvmpipe) provides a software GL 4.5 implementation so the OpenGL renderer
           # can be exercised headless through EGL's surfaceless platform.
+          # libegl-mesa0 is the Mesa EGL vendor driver that glvnd dispatches to -
+          # libegl1 alone is only the dispatch layer.
           # libvulkan-dev is required by find_package(Vulkan) at configure time.
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build git ca-certificates \
             libvulkan-dev \
-            libegl1 libgl1-mesa-dri libglx-mesa0 libglapi-mesa
-        # ubuntu-latest currently ships CMake >= 4 (configure passes -DCMAKE_POLICY_VERSION_MINIMUM=3.5).
+            libegl1 libegl-mesa0 libgl1-mesa-dri libglx-mesa0 libglapi-mesa
+        # ubuntu-24.04 ships CMake 3.28; -DCMAKE_POLICY_VERSION_MINIMUM=3.5 is ignored there (harmless),
+        # and required on newer images where CMake >= 4 removed < 3.5 compatibility.
 
       - name: Configure (linux-gcc-debug, Vulkan ON)
         # Vulkan is ON here so the DXC based shader compiler toolchain is downloaded
