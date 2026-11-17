@@ -9,6 +9,14 @@
 #include <cstring>
 
 // GL has no way to describe a row pitch for compressed texture uploads, so padded rows are repacked to tight rows here.
+static ezUInt32 DrainGLErrors()
+{
+  ezUInt32 uiCount = 0;
+  while (glGetError() != GL_NO_ERROR && uiCount < 8)
+    ++uiCount;
+  return uiCount;
+}
+
 static void RepackCompressedToTight(const ezGALSystemMemoryDescription& sourceData, ezUInt32 uiFullWidth, ezUInt32 uiFullHeight, ezUInt32 uiDepth, ezUInt32 uiBlockBytes, ezDynamicArray<ezUInt8>& out_storage)
 {
   const ezUInt32 uiBlocksPerRow = (uiFullWidth + 3) / 4;
@@ -126,14 +134,6 @@ ezResult ezGALTextureOpenGL::InitPlatform(ezGALDevice* pDevice, ezArrayPtr<ezGAL
   }
 
   return EZ_SUCCESS;
-}
-
-static ezUInt32 DrainGLErrors()
-{
-  ezUInt32 uiCount = 0;
-  while (glGetError() != GL_NO_ERROR && uiCount < 8)
-    ++uiCount;
-  return uiCount;
 }
 
 ezResult ezGALTextureOpenGL::CreateTextureStorage()
