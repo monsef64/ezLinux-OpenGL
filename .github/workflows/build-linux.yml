@@ -254,6 +254,7 @@ jobs:
            GL_VERSION = 0x1F02
            GL_FRAMEBUFFER_SRGB = 0x8DB9
            GL_TEXTURE_2D = 0x0DE1
+           GL_FRAMEBUFFER = 0x8D40
            GL_READ_FRAMEBUFFER = 0x8CA8
            GL_DRAW_FRAMEBUFFER = 0x8CA9
            GL_COLOR_ATTACHMENT0 = 0x8CE0
@@ -282,6 +283,7 @@ jobs:
            glReadPixels = glfun('glReadPixels', None, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
            glClearColor = glfun('glClearColor', None, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float)
            glClear = glfun('glClear', None, ctypes.c_uint)
+           GL_FRAMEBUFFER = 0x8D40
            GL_READ_FRAMEBUFFER = 0x8CA8
            GL_COLOR_BUFFER_BIT = 0x4000
            def probe(label, srgb_enable):
