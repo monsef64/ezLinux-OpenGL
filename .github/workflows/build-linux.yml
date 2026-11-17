@@ -393,6 +393,37 @@ jobs:
               if raw < fy * 0.5: raw_much_better += 1
           print('::notice::FORENSICS-SUMMARY files=%d noref=%d avg_raw_mse=%.0f avg_flipy_mse=%.0f flipy_much_better=%d raw_much_better=%d' % (n, noref, tot_raw / max(n, 1), tot_fy / max(n, 1), fy_much_better, raw_much_better))
           print('::notice::FORENSICS ' + '~'.join(rows))
+          # Per-file A/B: compare sRGB-encode of the captured image vs the capture itself,
+          # to check the FRAMEBUFFER_SRGB fix hypothesis against the references.
+          def srgb_encode(x):
+              x = np.clip(x, 0.0, 1.0)
+              return np.where(x <= 0.0031308, 12.92 * x, 1.055 * np.power(x, 1.0/2.4) - 0.055)
+          ref_tag_cache = {}
+          better = 0; worse = 0; same = 0
+          for cap in sorted(glob.glob(RES + '/*.png')):
+              name = os.path.basename(cap)[:-4]
+              ref_path = None
+              for t in TAGS:
+                  p = os.path.join(REFDIR, name + t + '.png')
+                  if os.path.exists(p):
+                      ref_path = p; break
+              if ref_path is None:
+                  continue
+              a = np.asarray(Image.open(cap).convert('RGBA'), dtype=np.float32) / 255.0
+              b = np.asarray(Image.open(ref_path).convert('RGBA'), dtype=np.float32) / 255.0
+              if a.shape != b.shape:
+                  continue
+              enc = a.copy()
+              enc[..., :3] = srgb_encode(a[..., :3])
+              mse_raw = float(((a - b) ** 2).mean())
+              mse_enc = float(((enc - b) ** 2).mean())
+              if mse_enc < mse_raw * 0.7:
+                  better += 1
+              elif mse_enc > mse_raw * 1.3:
+                  worse += 1
+              else:
+                  same += 1
+          print('::notice::SRGBFIX check: encode-helps=%d encode-hurts=%d encode-neutral=%d' % (better, worse, same))
           PYEOF
 
       - name: Artifact - RendererTest output

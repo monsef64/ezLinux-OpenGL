@@ -138,6 +138,11 @@ ezResult ezGALDeviceOpenGL::InitPlatform()
   ezClipSpaceDepthRange::Default = ezClipSpaceDepthRange::ZeroToOne;
   ezClipSpaceYMode::RenderToTextureDefault = m_bClipControl ? ezClipSpaceYMode::Regular : ezClipSpaceYMode::Flipped;
 
+  // Writes to sRGB framebuffers must convert linear colors to sRGB, like on D3D/Vulkan.
+  // The GL specification leaves FRAMEBUFFER_SRGB disabled on some implementations (e.g. Mesa),
+  // so enable it explicitly. It only affects attachments with an sRGB internal format.
+  glEnable(GL_FRAMEBUFFER_SRGB);
+
   {
     GLint iMaxTextureImageUnits = 0;
     glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &iMaxTextureImageUnits);
