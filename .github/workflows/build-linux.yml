@@ -189,7 +189,7 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           for F in RGBAInt RGBUInt RByteNormalized RGBAShortNormalized; do
             ./Output/Bin/LinuxNinjaGccDebug64/RendererTest -noGui true -headless true -renderer OpenGL \
-              -outputDir "$PWD/RTOut_$F" -filter "Readback:$F" > "log_$F.txt" 2>&1 || true
+              -outputDir "$PWD/RTOut_$F" -filter "$F" > "log_$F.txt" 2>&1 || true
             echo "::notice::F$F === $(grep -E 'Tests (failed|passed)' "log_$F.txt" | tail -2 | tr '\n' ' ')"
           done
           python3 -m pip install --quiet pillow 2>/dev/null || pip install --quiet pillow
