@@ -99,9 +99,10 @@ ezResult ezGALTextureOpenGL::InitPlatform(ezGALDevice* pDevice, ezArrayPtr<ezGAL
     return EZ_FAILURE;
   }
 
+  const bool bProbeUpload = ezGALResourceFormat::IsBlockCompressed(m_Description.m_Format);
   if (!m_bMSAA && !pInitialData.IsEmpty())
   {
-    if (bProbeCompressed)
+    if (bProbeUpload)
       DrainGLErrors();
     if (UploadInitialData(pInitialData).Failed())
     {
@@ -109,7 +110,7 @@ ezResult ezGALTextureOpenGL::InitPlatform(ezGALDevice* pDevice, ezArrayPtr<ezGAL
       m_uiTexture = 0;
       return EZ_FAILURE;
     }
-    if (bProbeCompressed)
+    if (bProbeUpload)
     {
       ezUInt32 uiErr = 0;
       while (true)
