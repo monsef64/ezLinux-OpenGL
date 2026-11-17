@@ -74,6 +74,82 @@ namespace
   };
 } // namespace
 
+
+// TEMP-DEBUG: dump the layout of all buffer blocks in the module. Used to diagnose SPIRV-Cross packing failures.
+static void DumpBufferBlocks(spirv_cross::CompilerGLSL& ref_compiler, const char* szTag)
+{
+  const auto resources = ref_compiler.get_shader_resources();
+  const auto dumpList = [&ref_compiler, szTag](const spirv_cross::SmallVector<spirv_cross::Resource>& list, const char* szKind)
+  {
+    for (const auto& resource : list)
+    {
+      const spirv_cross::SPIRType& blockType = ref_compiler.get_type(resource.base_type_id);
+      const ezUInt32 uiMembers = static_cast<ezUInt32>(blockType.member_types.size());
+      if (uiMembers == 0)
+      {
+        ezLog::Error("TEMP-DEBUG {0} {1} '{2}': no members", szTag, szKind, resource.name.c_str());
+        continue;
+      }
+      ezStringBuilder sTypes;
+      ezStringBuilder sOffsets;
+      ezStringBuilder sFlags;
+      for (ezUInt32 i = 0; i < uiMembers; ++i)
+      {
+        const spirv_cross::SPIRType& memberType = ref_compiler.get_type(blockType.member_types[i]);
+        const uint32_t uiOffset = ref_compiler.get_member_decoration(blockType.self, i, spv::DecorationOffset);
+        if (memberType.basetype == spirv_cross::SPIRType::Struct)
+        {
+          sTypes.AppendFormat("{0}struct", i == 0 ? "" : ",");
+        }
+        else if (memberType.columns > 1)
+          sTypes.AppendFormat("{0}f{1}x{2}", i == 0 ? "" : ",", memberType.vecsize, memberType.columns);
+        else if (memberType.vecsize > 1)
+          sTypes.AppendFormat("{0}v{1}", i == 0 ? "" : ",", memberType.vecsize);
+        else
+        {
+          switch (memberType.basetype)
+          {
+            case spirv_cross::SPIRType::Boolean:
+              sTypes.AppendFormat("{0}bool", i == 0 ? "" : ",");
+              break;
+            case spirv_cross::SPIRType::Float:
+              sTypes.AppendFormat("{0}float", i == 0 ? "" : ",");
+              break;
+            case spirv_cross::SPIRType::Int:
+              sTypes.AppendFormat("{0}int", i == 0 ? "" : ",");
+              break;
+            case spirv_cross::SPIRType::UInt:
+              sTypes.AppendFormat("{0}uint", i == 0 ? "" : ",");
+              break;
+            case spirv_cross::SPIRType::Half:
+              sTypes.AppendFormat("{0}half", i == 0 ? "" : ",");
+              break;
+            default:
+              sTypes.AppendFormat("{0}base{1}", i == 0 ? "" : ",", (int)memberType.basetype);
+              break;
+          }
+        }
+        if (!memberType.array.empty())
+        {
+          sTypes.AppendFormat("[{0}]", memberType.array[0]);
+        }
+        sOffsets.AppendFormat("{0}{1}", i == 0 ? "" : ",", uiOffset);
+        const auto& flags = ref_compiler.get_member_decoration_bitset(blockType.self, i);
+        if (flags.get(spv::DecorationRowMajor))
+          sFlags.AppendFormat("{0}r{1}", sFlags.IsEmpty() ? "" : ",", i);
+        if (flags.get(spv::DecorationColMajor))
+          sFlags.AppendFormat("{0}c{1}", sFlags.IsEmpty() ? "" : ",", i);
+      }
+      ezLog::Error("TEMP-DEBUG {0} {1} '{2}' types={3}", szTag, szKind, resource.name.c_str(), sTypes);
+      ezLog::Error("TEMP-DEBUG {0} {1} '{2}' offsets={3} rowmajor={4}", szTag, szKind, resource.name.c_str(), sOffsets, sFlags.IsEmpty() ? "-" : sFlags);
+    }
+  };
+  dumpList(resources.storage_buffers, "ssbo");
+  dumpList(resources.uniform_buffers, "ubo");
+  dumpList(resources.push_constant_buffers, "push");
+}
+
+
 ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
 {
   m_pDevice = pDevice;
@@ -359,6 +435,7 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
     {
       // Retry the stage with Vulkan semantics so scalar-layout blocks can be emitted as scalar block layout.
       ezLog::Info("Failed to convert stage {0} to desktop GLSL ({1}); retrying with scalar block layout.", ezGALShaderStage::Names[stage], e.what());
+      DumpBufferBlocks(*pCompiler, ezGALShaderStage::Names[stage]);
       const ezGALShaderByteCode* pByteCode = m_Description.m_ByteCodes[stage].Borrow();
       const ezUInt32* pSpirv = reinterpret_cast<const ezUInt32*>(pByteCode->GetByteCode());
       const size_t uiSpirvCount = pByteCode->GetSize() / 4;
