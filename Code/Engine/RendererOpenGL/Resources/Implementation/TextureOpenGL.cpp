@@ -99,35 +99,48 @@ ezResult ezGALTextureOpenGL::InitPlatform(ezGALDevice* pDevice, ezArrayPtr<ezGAL
     return EZ_FAILURE;
   }
 
-  if (ezGALResourceFormat::IsBlockCompressed(m_Description.m_Format))
-  {
-    GLenum ePre = glGetError(); // clear stale errors
-    EZ_IGNORE_UNUSED(ePre);
-  }
-
   if (!m_bMSAA && !pInitialData.IsEmpty())
   {
+    if (bProbeCompressed)
+      DrainGLErrors();
     if (UploadInitialData(pInitialData).Failed())
     {
       glDeleteTextures(1, &m_uiTexture);
       m_uiTexture = 0;
       return EZ_FAILURE;
     }
-  }
-
-  if (ezGALResourceFormat::IsBlockCompressed(m_Description.m_Format))
-  {
-    GLenum ePost = glGetError();
-    ezLog::Warning("BC3PROBE fmt={0} w={1} h={2} mips={3} faces={4} nInit={5} glerr=0x{6}",
-      m_Description.m_Format.GetValue(), m_Description.m_uiWidth, m_Description.m_uiHeight,
-      m_Description.m_uiMipLevelCount, m_uiArraySize, pInitialData.GetCount(), (ezUInt32)ePost);
+    if (bProbeCompressed)
+    {
+      ezUInt32 uiErr = 0;
+      while (true)
+      {
+        GLenum e = glGetError();
+        if (e == GL_NO_ERROR)
+          break;
+        uiErr = (uiErr << 4) | (ezUInt32)(e & 0xF);
+      }
+      ezLog::Warning("BCP fmt={0} stage=upload mips={1} faces={2} n={3} err={4}",
+        m_Description.m_Format.GetValue(), m_Description.m_uiMipLevelCount, m_uiArraySize, pInitialData.GetCount(), uiErr);
+    }
   }
 
   return EZ_SUCCESS;
 }
 
+static ezUInt32 DrainGLErrors()
+{
+  ezUInt32 uiCount = 0;
+  while (glGetError() != GL_NO_ERROR && uiCount < 8)
+    ++uiCount;
+  return uiCount;
+}
+
 ezResult ezGALTextureOpenGL::CreateTextureStorage()
 {
+  const bool bProbeCompressed = ezGALResourceFormat::IsBlockCompressed(m_Description.m_Format);
+  if (bProbeCompressed)
+    DrainGLErrors();
+
   const GLenum eInternalFormat = ezMappingTables::ToGLTextureInternalFormat(m_Description.m_Format);
   if (eInternalFormat == 0)
   {
@@ -256,6 +269,19 @@ ezResult ezGALTextureOpenGL::CreateTextureStorage()
     }
 
     glBindTexture(m_eTarget, 0);
+  }
+
+  if (bProbeCompressed)
+  {
+    ezUInt32 uiErr = 0;
+    while (true)
+    {
+      GLenum e = glGetError();
+      if (e == GL_NO_ERROR)
+        break;
+      uiErr = (uiErr << 4) | (ezUInt32)(e & 0xF);
+    }
+    ezLog::Warning("BCP fmt={0} stage=storage n={1}", m_Description.m_Format.GetValue(), uiErr);
   }
 
   // Default texture parameters
