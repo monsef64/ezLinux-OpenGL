@@ -405,6 +405,8 @@ ezResult ezGALTextureOpenGL::UploadInitialData(ezArrayPtr<ezGALSystemMemoryDescr
     {
       const ezUInt32 uiBlockWidth = 4, uiBlockHeight = 4;
       const GLsizei uiImageSize = static_cast<GLsizei>((((uiWidth + uiBlockWidth - 1) / uiBlockWidth) * ((uiHeight + uiBlockHeight - 1) / uiBlockHeight)) * uiBlockBytes * (eTarget == GL_TEXTURE_3D ? uiDepth : 1));
+      DrainGLErrors();
+      const ezUInt32 uiTightPitch = ((uiWidth + 3) / 4) * uiBlockBytes;
 
       switch (eTarget)
       {
@@ -427,6 +429,16 @@ ezResult ezGALTextureOpenGL::UploadInitialData(ezArrayPtr<ezGALSystemMemoryDescr
           else
             glCompressedTexSubImage2D(FaceTarget(eTarget, uiSlice), uiMipLevel, 0, 0, uiWidth, uiHeight, ezMappingTables::ToGLTextureInternalFormat(m_Description.m_Format), uiImageSize, pData);
           break;
+      }
+      {
+        GLenum eAfter = glGetError();
+        if (eAfter != GL_NO_ERROR)
+        {
+          ezLog::Warning("UPDFAIL fmt={0} mip={1} {2}x{3} blk={4} size={5} rowPitch={6} tight={7} repacked={8} ifmt=0x{9} tgt=0x{10} slice={11} err=0x{12}",
+            m_Description.m_Format.GetValue(), uiMipLevel, uiWidth, uiHeight, uiBlockBytes, (ezUInt32)uiImageSize,
+            desc.m_uiRowPitch, uiTightPitch, repacked.IsEmpty() ? 0 : 1,
+            (ezUInt32)ezMappingTables::ToGLTextureInternalFormat(m_Description.m_Format), (ezUInt32)eTarget, uiSlice, (ezUInt32)eAfter);
+        }
       }
       return EZ_SUCCESS;
     }
