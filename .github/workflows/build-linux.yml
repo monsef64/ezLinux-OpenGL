@@ -276,12 +276,12 @@ jobs:
                glTextureStorage2D(t, 1, fmt, 8, 8)
                return t.value
            glBindTexture = glfun('glBindTexture', None, ctypes.c_uint, ctypes.c_uint)
-          glBindFramebuffer = glfun('glBindFramebuffer', None, ctypes.c_uint, ctypes.c_uint)
-          glGetTexImage = glfun('glGetTexImage', None, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
-          glTextureSubImage2D = glfun('glTextureSubImage2D', None, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
-          glReadPixels = glfun('glReadPixels', None, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
-          GL_READ_FRAMEBUFFER = 0x8CA8
-          def probe(label, srgb_enable):
+           glBindFramebuffer = glfun('glBindFramebuffer', None, ctypes.c_uint, ctypes.c_uint)
+           glGetTexImage = glfun('glGetTexImage', None, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
+           glTextureSubImage2D = glfun('glTextureSubImage2D', None, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
+           glReadPixels = glfun('glReadPixels', None, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
+           GL_READ_FRAMEBUFFER = 0x8CA8
+           def probe(label, srgb_enable):
               if srgb_enable: glEnable(GL_FRAMEBUFFER_SRGB)
               else: glDisable(GL_FRAMEBUFFER_SRGB)
               state = ctypes.c_int32(); glGetIntegerv(GL_FRAMEBUFFER_SRGB, ctypes.byref(state))
