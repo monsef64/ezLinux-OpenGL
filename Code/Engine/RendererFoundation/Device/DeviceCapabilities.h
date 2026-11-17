@@ -45,7 +45,10 @@ struct ezGALBufferLayout
     Vulkan_Std430_relaxed, // Vulkan structured buffer
     DirectX_ConstantButter,
     DirectX_StructuredButter,
-    Default = DirectX_ConstantButter
+    Default = DirectX_ConstantButter,
+    // Strict OpenGL std430 (used by the OpenGL backend, DXC with -fvk-use-gl-layout). Appended to keep the
+    // existing enum values stable; explicit value because Default resets the implicit counter.
+    Vulkan_Std430 = 4
   };
 };
 

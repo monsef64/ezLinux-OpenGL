@@ -16,6 +16,7 @@ public:
 
   virtual ezEnum<ezGALBufferLayout> GetMaterialBufferLayout(ezStringView sPlatform) const override
   {
-    return ezGALBufferLayout::Vulkan_Std430_relaxed;
+    // The OpenGL backend compiles material shaders with -fvk-use-gl-layout, i.e. strict OpenGL std430.
+    return ezGALBufferLayout::Vulkan_Std430;
   }
 };

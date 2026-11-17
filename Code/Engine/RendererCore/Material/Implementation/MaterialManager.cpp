@@ -480,6 +480,7 @@ ezMaterialManager::MaterialShaderConstants::MaterialShaderConstants(ezShaderReso
       m_Mode = MaterialStorageMode::MultipleConstantBuffer;
       break;
     case ezGALBufferLayout::Vulkan_Std430_relaxed:
+    case ezGALBufferLayout::Vulkan_Std430:
     case ezGALBufferLayout::DirectX_StructuredButter:
       m_Mode = MaterialStorageMode::MultipleStructuredBuffer;
       break;

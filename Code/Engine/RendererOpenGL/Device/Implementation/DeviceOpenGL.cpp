@@ -1204,7 +1204,7 @@ void ezGALDeviceOpenGL::FillCapabilitiesPlatform()
 
   m_Capabilities.m_bSupportsMultithreadedResourceCreation = false;
   m_Capabilities.m_bSupportsMultipleBindGroups = true;
-  m_Capabilities.m_materialBufferLayout = ezGALBufferLayout::Vulkan_Std430_relaxed;
+  m_Capabilities.m_materialBufferLayout = ezGALBufferLayout::Vulkan_Std430;
 
   for (ezUInt32 i = 0; i < ezGALShaderStage::ENUM_COUNT; ++i)
   {

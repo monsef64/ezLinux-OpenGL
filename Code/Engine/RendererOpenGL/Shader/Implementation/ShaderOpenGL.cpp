@@ -76,79 +76,6 @@ namespace
 
 
 
-// GLSL has no way to override the array stride of a block member, so a runtime array of structs inside a block must use the stride of the
-// packing that the block is emitted with. ez's relaxed material packing pads the struct to 16 bytes for the runtime array stride (which DXC
-// reflects), while scalar block layout only requires size rounding to 4 bytes. Patch the decorated stride to the scalar value so that SPIRV-Cross
-// can validate the block for scalar block layout emission; the CPU-written material buffer is only ever indexed at element 0, so the actual
-// stride is never used at runtime.
-static ezUInt32 ScalarPackedSize(const spirv_cross::CompilerGLSL& ref_compiler, const spirv_cross::SPIRType& type);
-static ezUInt32 ScalarMemberAlignment(const spirv_cross::CompilerGLSL& ref_compiler, const spirv_cross::SPIRType& type);
-
-static ezUInt32 ScalarPackedSize(const spirv_cross::CompilerGLSL& ref_compiler, const spirv_cross::SPIRType& type)
-{
-  if (!type.array.empty())
-  {
-    const spirv_cross::SPIRType& elem = ref_compiler.get_type(type.parent_type);
-    return type.array[0] * ScalarPackedSize(ref_compiler, elem);
-  }
-  if (type.basetype == spirv_cross::SPIRType::Struct)
-  {
-    ezUInt32 uiSize = 0;
-    ezUInt32 uiPadAlignment = 1;
-    for (const spirv_cross::TypeID memberId : type.member_types)
-    {
-      const spirv_cross::SPIRType& memberType = ref_compiler.get_type(memberId);
-      const ezUInt32 uiMemberAlignment = ScalarMemberAlignment(ref_compiler, memberType);
-      const ezUInt32 uiAlignment = ezMath::Max<ezUInt32>(uiMemberAlignment, uiPadAlignment);
-      uiPadAlignment = memberType.basetype == spirv_cross::SPIRType::Struct ? uiMemberAlignment : 1;
-      uiSize = (uiSize + uiAlignment - 1) & ~(uiAlignment - 1);
-      uiSize += ScalarPackedSize(ref_compiler, memberType);
-    }
-    return uiSize;
-  }
-  const ezUInt32 uiBaseSize = (type.width / 8) != 0 ? (type.width / 8) : 4;
-  return uiBaseSize * (type.columns == 0 ? 1 : type.columns) * (type.vecsize == 0 ? 1 : type.vecsize);
-}
-
-static ezUInt32 ScalarMemberAlignment(const spirv_cross::CompilerGLSL& ref_compiler, const spirv_cross::SPIRType& type)
-{
-  if (type.basetype == spirv_cross::SPIRType::Struct)
-  {
-    ezUInt32 uiAlignment = 1;
-    for (const spirv_cross::TypeID memberId : type.member_types)
-    {
-      const spirv_cross::SPIRType& memberType = ref_compiler.get_type(memberId);
-      uiAlignment = ezMath::Max<ezUInt32>(uiAlignment, ScalarMemberAlignment(ref_compiler, memberType));
-    }
-    return uiAlignment;
-  }
-  return (type.width / 8) != 0 ? (type.width / 8) : 4;
-}
-
-static void FixRuntimeArrayStridesForScalarLayout(spirv_cross::CompilerGLSL& ref_compiler)
-{
-  const auto resources = ref_compiler.get_shader_resources();
-  const auto fixList = [&ref_compiler](const spirv_cross::SmallVector<spirv_cross::Resource>& list)
-  {
-    for (const auto& resource : list)
-    {
-      const spirv_cross::SPIRType& outerType = ref_compiler.get_type(resource.base_type_id);
-      if (outerType.member_types.size() != 1)
-        continue;
-      const spirv_cross::SPIRType& arrayType = ref_compiler.get_type(outerType.member_types[0]);
-      if (arrayType.array.empty() || arrayType.parent_type == 0)
-        continue;
-      const spirv_cross::SPIRType& elemType = ref_compiler.get_type(arrayType.parent_type);
-      // Scalar stride of a struct equals its size, since all member alignments are component-sized.
-      const ezUInt32 uiStride = ScalarPackedSize(ref_compiler, elemType);
-      ref_compiler.set_member_decoration(outerType.self, 0, spv::DecorationArrayStride, uiStride);
-    }
-  };
-  fixList(resources.storage_buffers);
-  fixList(resources.uniform_buffers);
-  fixList(resources.push_constant_buffers);
-}
-
 
 ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
 {
@@ -371,11 +298,6 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
 
   auto ConvertStage = [&](spirv_cross::CompilerGLSL* pCompiler, ezUInt32 uiStage, bool bVulkanSemantics) -> ezResult
   {
-    if (bVulkanSemantics)
-    {
-      FixRuntimeArrayStridesForScalarLayout(*pCompiler);
-    }
-
     spirv_cross::CompilerGLSL::Options options;
     options.version = 450;
     options.es = false;

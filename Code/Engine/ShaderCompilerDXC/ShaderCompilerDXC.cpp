@@ -268,7 +268,7 @@ ezResult ezShaderCompilerDXC::Compile(ezShaderProgramData& inout_data, ezLogInte
     {
       const ezStringBuilder sSourceFile = inout_data.m_sSourceFile;
 
-      if (CompileSPIRVShader(sSourceFile, sShaderSource, inout_data.m_Flags.IsSet(ezShaderCompilerFlags::Debug), GetProfileName(inout_data.m_sPlatform, (ezGALShaderStage::Enum)stage), "main", inout_data.m_ByteCode[stage]->m_ByteCode).Succeeded())
+      if (CompileSPIRVShader(sSourceFile, sShaderSource, inout_data.m_Flags.IsSet(ezShaderCompilerFlags::Debug), GetProfileName(inout_data.m_sPlatform, (ezGALShaderStage::Enum)stage), "main", inout_data.m_ByteCode[stage]->m_ByteCode, inout_data.m_sPlatform).Succeeded())
       {
         EZ_SUCCEED_OR_RETURN(ReflectShaderStage(inout_data, (ezGALShaderStage::Enum)stage));
       }
@@ -282,15 +282,21 @@ ezResult ezShaderCompilerDXC::Compile(ezShaderProgramData& inout_data, ezLogInte
   return EZ_SUCCESS;
 }
 
-void ezShaderCompilerDXC::ConfigureDxcArgs(ezDynamicArray<ezStringWChar>& inout_Args)
+void ezShaderCompilerDXC::ConfigureDxcArgs(ezDynamicArray<ezStringWChar>& inout_Args, ezStringView sPlatform)
 {
   inout_Args.PushBack(L"-spirv");
   inout_Args.PushBack(L"-fvk-use-dx-position-w");
   inout_Args.PushBack(L"-fspv-target-env=vulkan1.1");
   // inout_Args.PushBack(L"-fvk-use-dx-layout");
+  if (sPlatform == "OPENGL")
+  {
+    // The OpenGL backend converts the SPIR-V to GLSL and binds plain std430 SSBOs. Use strict OpenGL layout
+    // so the emitted offsets and strides are valid std430, matching ezRendererOpenGL's material buffer layout.
+    inout_Args.PushBack(L"-fvk-use-gl-layout");
+  }
 }
 
-ezResult ezShaderCompilerDXC::CompileSPIRVShader(ezStringView sFile, ezStringView sSource, bool bDebug, ezStringView sProfile, ezStringView sEntryPoint, ezDynamicArray<ezUInt8>& out_ByteCode)
+ezResult ezShaderCompilerDXC::CompileSPIRVShader(ezStringView sFile, ezStringView sSource, bool bDebug, ezStringView sProfile, ezStringView sEntryPoint, ezDynamicArray<ezUInt8>& out_ByteCode, ezStringView sPlatform)
 {
   out_ByteCode.Clear();
 
@@ -304,7 +310,7 @@ ezResult ezShaderCompilerDXC::CompileSPIRVShader(ezStringView sFile, ezStringVie
   args.PushBack(L"-T");
   args.PushBack(ezStringWChar(sProfile));
 
-  ConfigureDxcArgs(args);
+  ConfigureDxcArgs(args, sPlatform);
 
   if (bDebug)
   {
