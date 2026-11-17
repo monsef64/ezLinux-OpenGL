@@ -173,7 +173,11 @@ jobs:
           tail -150 renderertest.log
           echo "=== summary lines as annotations ==="
           grep -E "Tests (failed|passed)" renderertest.log | tail -2 | while read -r line; do echo "::notice::${line:0:300}"; done
-          grep -E "Test '|Sub-Test|Initialization failed" renderertest.log | tail -4 | while read -r line; do echo "::notice::${line:0:300}"; done
+          echo "=== failing sub-tests as annotations (capped) ==="
+          grep -E "(Test|Sub-Test) '[^']*' failed" renderertest.log | cut -c1-250 | head -12 | while read -r line; do echo "::notice::${line:0:290}"; done
+          echo "=== error detail lines (file:line / ezLog Error), top hits ==="
+          sed -r 's/\x1b\[[0-9;]*m//g' renderertest.log > renderertest-clean.log
+          grep -E "ezLog Error|EZ_TEST_|Line: |Error: " renderertest-clean.log | sed -r 's/\[[0-9]+m//g; s/^ *//; s/[0-9a-fA-F]\{6,\}/HEX/g' | cut -c1-150 | sort | uniq -c | sort -rn | head -30 | while read -r line; do echo "::notice::${line:0:290}"; done
           echo "=== consolidated diagnostics as a single annotation ==="
           sed -r 's/\x1b\[[0-9;]*m//g' renderertest.log > renderertest-clean.log
           L=$(wc -l < renderertest-clean.log)
