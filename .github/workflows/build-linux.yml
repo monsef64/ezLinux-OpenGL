@@ -182,6 +182,55 @@ jobs:
             echo "::warning::RendererTest reported failing suites. Expected until OpenGL reference images are captured; inspect the RendererTestOutput artifact."
           fi
 
+      - name: Forensics - analyze captured images (TEMP)
+        if: always()
+        run: |
+          (python3 -m pip install --quiet pillow numpy 2>/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil python3-numpy)) || true
+          python3 - <<'PYEOF'
+          import glob, os
+          try:
+              from PIL import Image
+              import numpy as np
+          except Exception as e:
+              print('::notice::FORENSICS-SKIP deps unavailable: %s' % e)
+              raise SystemExit(0)
+
+          RES = 'RendererTestOutput/Images_Result'
+          REFDIR = 'Data/UnitTests/RendererTest/Images_Reference'
+          TAGS = ['', '-linux', '-opengl', '-llvmpipe', '-opengl-llvmpipe', '-vulkan', '-vulkan-llvmpipe', '-d3dref', '-amd', '-swiftshader']
+          rows = []
+          n = 0; fy_much_better = 0; raw_much_better = 0; tot_raw = 0.0; tot_fy = 0.0; noref = 0
+          for cap in sorted(glob.glob(RES + '/*.png')):
+              name = os.path.basename(cap)[:-4]
+              ref_path = None; ref_tag = None
+              for t in TAGS:
+                  p = os.path.join(REFDIR, name + t + '.png')
+                  if os.path.exists(p):
+                      ref_path = p; ref_tag = t or 'base'; break
+              if ref_path is None:
+                  noref += 1
+                  continue
+              a = np.asarray(Image.open(cap).convert('RGBA'), dtype=np.float32)
+              b = np.asarray(Image.open(ref_path).convert('RGBA'), dtype=np.float32)
+              if a.shape != b.shape:
+                  rows.append('%s: SIZE %dx%d vs ref %dx%d (%s)' % (name, a.shape[1], a.shape[0], b.shape[1], b.shape[0], ref_tag))
+                  continue
+              def mse(x, y):
+                  d = x - y
+                  return float((d * d).mean())
+              raw = mse(a, b)
+              fy = mse(np.ascontiguousarray(a[::-1]), b)
+              fx = mse(np.ascontiguousarray(a[:, ::-1]), b)
+              r180 = mse(np.ascontiguousarray(a[::-1, ::-1]), b)
+              d = (a - b).mean(axis=(0, 1))
+              rows.append('%s: raw=%.0f flipY=%.0f flipX=%.0f rot180=%.0f d=(%+.1f,%+.1f,%+.1f,%+.1f) ref=%s' % (name, raw, fy, fx, r180, d[0], d[1], d[2], d[3], ref_tag))
+              n += 1; tot_raw += raw; tot_fy += fy
+              if fy < raw * 0.5: fy_much_better += 1
+              if raw < fy * 0.5: raw_much_better += 1
+          print('::notice::FORENSICS-SUMMARY files=%d noref=%d avg_raw_mse=%.0f avg_flipy_mse=%.0f flipy_much_better=%d raw_much_better=%d' % (n, noref, tot_raw / max(n, 1), tot_fy / max(n, 1), fy_much_better, raw_much_better))
+          print('::notice::FORENSICS ' + '~'.join(rows))
+          PYEOF
+
       - name: Artifact - RendererTest output
         if: always()
         uses: actions/upload-artifact@v7
