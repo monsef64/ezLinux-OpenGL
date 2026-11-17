@@ -9,14 +9,6 @@
 #include <cstring>
 
 // GL has no way to describe a row pitch for compressed texture uploads, so padded rows are repacked to tight rows here.
-static ezUInt32 DrainGLErrors()
-{
-  ezUInt32 uiCount = 0;
-  while (glGetError() != GL_NO_ERROR && uiCount < 8)
-    ++uiCount;
-  return uiCount;
-}
-
 static void RepackCompressedToTight(const ezGALSystemMemoryDescription& sourceData, ezUInt32 uiFullWidth, ezUInt32 uiFullHeight, ezUInt32 uiDepth, ezUInt32 uiBlockBytes, ezDynamicArray<ezUInt8>& out_storage)
 {
   const ezUInt32 uiBlocksPerRow = (uiFullWidth + 3) / 4;
@@ -107,29 +99,13 @@ ezResult ezGALTextureOpenGL::InitPlatform(ezGALDevice* pDevice, ezArrayPtr<ezGAL
     return EZ_FAILURE;
   }
 
-  const bool bProbeUpload = ezGALResourceFormat::IsBlockCompressed(m_Description.m_Format);
   if (!m_bMSAA && !pInitialData.IsEmpty())
   {
-    if (bProbeUpload)
-      DrainGLErrors();
     if (UploadInitialData(pInitialData).Failed())
     {
       glDeleteTextures(1, &m_uiTexture);
       m_uiTexture = 0;
       return EZ_FAILURE;
-    }
-    if (bProbeUpload)
-    {
-      ezUInt32 uiErr = 0;
-      while (true)
-      {
-        GLenum e = glGetError();
-        if (e == GL_NO_ERROR)
-          break;
-        uiErr = (uiErr << 4) | (ezUInt32)(e & 0xF);
-      }
-      ezLog::Warning("BCP fmt={0} stage=upload mips={1} faces={2} n={3} err={4}",
-        m_Description.m_Format.GetValue(), m_Description.m_uiMipLevelCount, m_uiArraySize, pInitialData.GetCount(), uiErr);
     }
   }
 
@@ -138,10 +114,6 @@ ezResult ezGALTextureOpenGL::InitPlatform(ezGALDevice* pDevice, ezArrayPtr<ezGAL
 
 ezResult ezGALTextureOpenGL::CreateTextureStorage()
 {
-  const bool bProbeCompressed = ezGALResourceFormat::IsBlockCompressed(m_Description.m_Format);
-  if (bProbeCompressed)
-    DrainGLErrors();
-
   const GLenum eInternalFormat = ezMappingTables::ToGLTextureInternalFormat(m_Description.m_Format);
   if (eInternalFormat == 0)
   {
@@ -272,19 +244,6 @@ ezResult ezGALTextureOpenGL::CreateTextureStorage()
     glBindTexture(m_eTarget, 0);
   }
 
-  if (bProbeCompressed)
-  {
-    ezUInt32 uiErr = 0;
-    while (true)
-    {
-      GLenum e = glGetError();
-      if (e == GL_NO_ERROR)
-        break;
-      uiErr = (uiErr << 4) | (ezUInt32)(e & 0xF);
-    }
-    ezLog::Warning("BCP fmt={0} stage=storage n={1}", m_Description.m_Format.GetValue(), uiErr);
-  }
-
   // Default texture parameters
   if (glTextureParameteri != nullptr)
   {
@@ -405,8 +364,6 @@ ezResult ezGALTextureOpenGL::UploadInitialData(ezArrayPtr<ezGALSystemMemoryDescr
     {
       const ezUInt32 uiBlockWidth = 4, uiBlockHeight = 4;
       const GLsizei uiImageSize = static_cast<GLsizei>((((uiWidth + uiBlockWidth - 1) / uiBlockWidth) * ((uiHeight + uiBlockHeight - 1) / uiBlockHeight)) * uiBlockBytes * (eTarget == GL_TEXTURE_3D ? uiDepth : 1));
-      DrainGLErrors();
-      const ezUInt32 uiTightPitch = ((uiWidth + 3) / 4) * uiBlockBytes;
 
       switch (eTarget)
       {
@@ -429,16 +386,6 @@ ezResult ezGALTextureOpenGL::UploadInitialData(ezArrayPtr<ezGALSystemMemoryDescr
           else
             glCompressedTexSubImage2D(FaceTarget(eTarget, uiSlice), uiMipLevel, 0, 0, uiWidth, uiHeight, ezMappingTables::ToGLTextureInternalFormat(m_Description.m_Format), uiImageSize, pData);
           break;
-      }
-      {
-        GLenum eAfter = glGetError();
-        if (eAfter != GL_NO_ERROR)
-        {
-          ezLog::Warning("UPDFAIL fmt={0} mip={1} size={2} blk={3} img={4} rp={5} tight={6} rep={7} tgt={8} sl={9} err={10}",
-            m_Description.m_Format.GetValue(), uiMipLevel, uiWidth, uiBlockBytes, (ezUInt32)uiImageSize,
-            desc.m_uiRowPitch, uiTightPitch, repacked.IsEmpty() ? 0 : 1, (ezUInt32)eTarget, uiSlice, (ezUInt32)eAfter);
-          ezLog::Warning("UPDFMT ={0}", (ezUInt32)ezMappingTables::ToGLTextureInternalFormat(m_Description.m_Format));
-        }
       }
       return EZ_SUCCESS;
     }
