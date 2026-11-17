@@ -185,24 +185,19 @@ jobs:
       - name: Readback probe (TEMP)
         continue-on-error: true
         run: |
-          python3 -m pip install --quiet pillow 2>/dev/null || pip install --quiet pillow
-          python3 - <<'PYEOF'
-          import glob, os, gzip, base64, traceback
-          def notice(tag, text):
-              print('::notice::%s %s' % (tag, text[:2900]))
-          try:
-              for f in sorted(glob.glob('RendererTestOutput/Images_Result/*Readback_Upload*.png')):
-                  name = os.path.basename(f)[:-4]
-                  im = __import__('PIL.Image', fromlist=['Image']).open(f).convert('RGBA')
-                  im.thumbnail((160, 120))
-                  with open('/tmp/small.png', 'wb') as fh:
-                      im.save(fh, format='PNG', optimize=True)
-                  with open('/tmp/small.png', 'rb') as fh:
-                      raw = fh.read()
-                  notice('CAP:' + name, base64.b64encode(gzip.compress(raw, 9)).decode())
-          except Exception:
-              notice('RBERROR', traceback.format_exc().replace(chr(10), ' | '))
-          PYEOF
+          # Pair each Readback image-comparison error with the sub-test that produced it.
+          awk '
+            /Executing Sub-Test: / {
+              s = $0; sub(/.*Executing Sub-Test: ./, "", s); sub(/.*$/, "", s);
+              match($0, /\x27[^\x27]+\x27/); cur = substr($0, RSTART+1, RLENGTH-2)
+            }
+            /Image Comparison Failed/ && /Readback/ {
+              mse = $0; match($0, /MSE of [0-9]+/); m = substr($0, RSTART+7, RLENGTH-7)
+              img = $0; match($0, /Images_Reference\/[^\x27]+/); i = substr($0, RSTART+18, RLENGTH-18)
+              print cur "=" m "(" i ")"
+            }
+          ' renderertest-clean.log | sed 's/Readback_Upload_//' | paste -sd' ' - > /tmp/rb.txt
+          echo "::notice::RBMAP $(cat /tmp/rb.txt | cut -c1-2900)"
 
       - name: Artifact - RendererTest output
         if: always()
