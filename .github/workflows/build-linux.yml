@@ -185,21 +185,21 @@ jobs:
       - name: Readback probe (TEMP)
         continue-on-error: true
         run: |
-          python3 -m pip install --quiet numpy pillow 2>/dev/null || pip install --quiet numpy pillow
+          python3 -m pip install --quiet pillow 2>/dev/null || pip install --quiet pillow
           python3 - <<'PYEOF'
           import glob, os, gzip, base64, traceback
           def notice(tag, text):
               print('::notice::%s %s' % (tag, text[:2900]))
           try:
-              out = []
-              for f in sorted(glob.glob('RendererTestOutput/Images_Result/*Readback*.png')):
-                  with open(f, 'rb') as fh:
+              for f in sorted(glob.glob('RendererTestOutput/Images_Result/*Readback_Upload*.png')):
+                  name = os.path.basename(f)[:-4]
+                  im = __import__('PIL.Image', fromlist=['Image']).open(f).convert('RGBA')
+                  im.thumbnail((160, 120))
+                  with open('/tmp/small.png', 'wb') as fh:
+                      im.save(fh, format='PNG', optimize=True)
+                  with open('/tmp/small.png', 'rb') as fh:
                       raw = fh.read()
-                  out.append('%s|%s' % (os.path.basename(f)[:-4], base64.b64encode(gzip.compress(raw, 9)).decode()))
-              # reference images cannot be reconstructed from the repo, so ship their sizes only
-              notice('RBIMAGES', ' ; '.join(out))
-              refl = sorted(os.listdir('Data/UnitTests/RendererTest/Images_Reference'))
-              notice('RBREFLIST', ' '.join(refl))
+                  notice('CAP:' + name, base64.b64encode(gzip.compress(raw, 9)).decode())
           except Exception:
               notice('RBERROR', traceback.format_exc().replace(chr(10), ' | '))
           PYEOF
