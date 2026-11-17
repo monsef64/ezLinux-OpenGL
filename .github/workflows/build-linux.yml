@@ -231,11 +231,9 @@ jobs:
           if not ok: sys.exit(1)
           def glfun(name, restype, *argtypes):
               addr = libegl.eglGetProcAddress(name.encode('ascii'))
-              print('::notice::PROBE glfun %s -> 0x%x' % (name, 0 if addr is None else addr))
               if not addr:
                   raise RuntimeError('NULL addr for ' + name)
               return ctypes.CFUNCTYPE(restype, *argtypes)(addr)
-          sys.stdout.flush()
           try:
            glGetString = glfun('glGetString', ctypes.c_char_p, ctypes.c_uint)
            glGetIntegerv = glfun('glGetIntegerv', None, ctypes.c_uint, ctypes.c_void_p)
@@ -267,11 +265,11 @@ jobs:
            GL_RGBA = 0x1908
            GL_UNSIGNED_BYTE = 0x1401
            GL_COLOR = 0x1800
-           print('::notice::PROBE GL_VERSION =', glGetString(GL_VERSION).decode())
-           print('::notice::PROBE FRAMEBUFFER_SRGB default: glIsEnabled =', glIsEnabled(GL_FRAMEBUFFER_SRGB))
+           glver = glGetString(GL_VERSION).decode()
+           is_enabled = glIsEnabled(GL_FRAMEBUFFER_SRGB)
            fbi = ctypes.c_int32()
            glGetIntegerv(GL_FRAMEBUFFER_SRGB, ctypes.byref(fbi))
-           print('::notice::PROBE FRAMEBUFFER_SRGB default: glGetIntegerv =', fbi.value)
+           probe_results = ['GL_VERSION=%s' % glver, 'GB_SRGB_isEnabled=%d' % is_enabled, 'GB_SRGB_get=%d' % fbi.value]
            def make_tex_dsa(fmt):
                t = ctypes.c_uint(0)
                glCreateTextures(GL_TEXTURE_2D, 1, ctypes.byref(t))
@@ -303,9 +301,10 @@ jobs:
                buf2 = (ctypes.c_ubyte * (8*8*4))()
                glGetTextureSubImage(raw_copy, 0, 0, 0, 0, 8, 8, 1, GL_RGBA, GL_UNSIGNED_BYTE, ctypes.sizeof(buf2), buf2)
                err_get2 = glGetError()
-               print('::notice::PROBE %s FRAMEBUFFER_SRGB=%d fbo_complete=0x%x(encoding 0x%x) errs(%x,%x,%x,%x,%x) srgb_direct=%s raw_copy=%s' % (label, state.value, status, enc.value, err_before, err_clear, err_check, err_get, err_copy, str(list(buf[:4])), str(list(buf2[:4]))))
+               probe_results.append('%s GB_SRGB=%d fbo_ok=0x%x enc=0x%x errs=%x,%x,%x,%x,%x direct=%s rawcopy=%s' % (label, state.value, status, enc.value, err_before, err_clear, err_check, err_get, err_copy, str(list(buf[:4])), str(list(buf2[:4]))))
            probe('A-disabled', False)
            probe('B-enabled', True)
+           print('::notice::PROBERESULT ' + '~'.join(probe_results))
           except Exception as e:
               import traceback
               tb = traceback.format_exc().replace('\n', ' | ')
