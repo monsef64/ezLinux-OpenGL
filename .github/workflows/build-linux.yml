@@ -178,6 +178,8 @@ jobs:
           FAILING=$(grep -E "(Test|Sub-Test) '[^']*' failed" renderertest-clean.log | sed 's/ ([0-9.]* sec)\.//' | cut -c1-160 | tr '\n' '~')
           SUMMARY=$(grep -E "Tests (failed|passed)" renderertest-clean.log | tail -2 | tr '\n' '~')
           echo "::notice::failing: ${FAILING} | ${SUMMARY}"
+          MSELINES=$(grep -E "Image Comparison Failed" renderertest-clean.log | sed -E "s/.*MSE of ([0-9]+).*image 'Images_Reference\/([^']+)'.*/\2=\1/" | tr '\n' ' ')
+          echo "::notice::msemap ${MSELINES:0:2500}"
           HISTO=$(awk '/Executing Test:|Executing Sub-Test:/{cur=$0; next} /ezLog Error|Failure: |Comparison Image|Image Comparison Failed|queryValues|Block:|mismatch/{n[cur" +++ "substr($0,1,150)]++} END{for (k in n) printf "%d %s~", n[k], k}' renderertest-clean.log | sed 's/^ *//' | sort -rn | head -30)
           echo "::notice::per-test-errors: ${HISTO:0:2900}"
           if grep -qE "Tests failed: [1-9]" renderertest.log; then
@@ -494,6 +496,15 @@ jobs:
               m_a = '/'.join(str(int(v)) for v in a.reshape(-1, 4).mean(0))
               m_b = '/'.join(str(int(v)) for v in b.reshape(-1, 4).mean(0))
               lines.append('%s cap[%s %.2f] ref[%s %.2f] m=%s/%s' % (name, ca, fa, fb[0], fb[1], m_a, m_b))
+          # Every 2D / cube frame, so the format->frame mapping is visible against pass/fail.
+          extra = []
+          for cap in sorted(glob.glob(RES + '/*.png')):
+              name = os.path.basename(cap)[:-4]
+              if '2D_Textures' not in name and 'Cube_Textures' not in name:
+                  continue
+              a = np.asarray(Image.open(cap).convert('RGBA'), dtype=np.uint8)
+              extra.append('%s=%s' % (name, '/'.join(str(int(v)) for v in a.reshape(-1, 4).mean(0))))
+          print('::notice::FRAMES ' + ' '.join(extra)[:2500])
           print('::notice::COLORS ' + ' ~ '.join(lines)[:3000])
           PYEOF
 
