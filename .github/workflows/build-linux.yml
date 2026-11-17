@@ -176,7 +176,7 @@ jobs:
           FAILING=$(grep -E "(Test|Sub-Test) '[^']*' failed" renderertest-clean.log | sed 's/ ([0-9.]* sec)\.//' | cut -c1-160 | tr '\n' '~')
           SUMMARY=$(grep -E "Tests (failed|passed)" renderertest-clean.log | tail -2 | tr '\n' '~')
           echo "::notice::failing: ${FAILING} | ${SUMMARY}"
-          HISTO=$(awk '/Executing Test:|Executing Sub-Test:/{cur=$0; next} /ezLog Error|Failure: |Comparison Image|queryValues|Block:|mismatch/{n[cur" +++ "substr($0,1,150)]++} END{for (k in n) printf "%d %s~", n[k], k}' renderertest-clean.log | sed 's/^ *//' | sort -rn | head -30)
+          HISTO=$(awk '/Executing Test:|Executing Sub-Test:/{cur=$0; next} /ezLog Error|Failure: |Comparison Image|Image Comparison Failed|queryValues|Block:|mismatch/{n[cur" +++ "substr($0,1,150)]++} END{for (k in n) printf "%d %s~", n[k], k}' renderertest-clean.log | sed 's/^ *//' | sort -rn | head -30)
           echo "::notice::per-test-errors: ${HISTO:0:2900}"
           if grep -qE "Tests failed: [1-9]" renderertest.log; then
             echo "::warning::RendererTest reported failing suites. Expected until OpenGL reference images are captured; inspect the RendererTestOutput artifact."
