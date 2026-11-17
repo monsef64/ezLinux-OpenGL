@@ -186,52 +186,29 @@ jobs:
         continue-on-error: true
         run: |
           python3 - <<'PYEOF'
-          import glob, os, re
-          import numpy as np
-          from PIL import Image
-          REFDIR = 'Data/UnitTests/RendererTest/Images_Reference/'
-          RES = 'RendererTestOutput/Images_Result'
-          # Pair subtest -> reference image -> MSE, in log order (no dedup), for Readback only.
-          cur = None
-          pairs = []
-          for line in open('renderertest-clean.log', errors='ignore'):
-              m = re.search(r"Executing Sub-Test: '([^']+)'", line)
-              if m:
-                  cur = m.group(1); continue
-              m = re.search(r"MSE of (\d+) exceeds threshold of (\d+) for image 'Images_Reference/([^']+)'", line)
-              if m:
-                  pairs.append((cur, m.group(3), int(m.group(1)), int(m.group(2))))
-          rb = [p for p in pairs if 'Readback_Upload' in p[1]]
-          print('::notice::RBPAIRS ' + ' ~ '.join('%s|%s|%d/%d' % p for p in rb)[:2900])
-
-          # For each failing upload image: quadrant-restricted comparison against transforms.
-          seen = set()
-          out = []
-          for _, img, _, _ in rb:
-              name = img[:-4]
-              if name in seen: continue
-              seen.add(name)
-              cap = RES + '/' + name + '.png'
-              if not os.path.exists(cap): continue
-              a = np.asarray(Image.open(cap).convert('RGBA'), dtype=np.float64)
-              b = np.asarray(Image.open(REFDIR + img).convert('RGBA'), dtype=np.float64)
-              H, W = a.shape[:2]
-              # upload is drawn into the upper-right quadrant
-              y0, y1 = 0, H // 2
-              x0, x1 = W // 2, W
-              qa = a[y0:y1, x0:x1]
-              qb = b[y0:y1, x0:x1]
-              def mse(x, y): return float(((x - y) ** 2).mean())
-              variants = {
-                  'raw': qa,
-                  'flipY': qa[::-1],
-                  'flipX': qa[:, ::-1],
-                  'rot180': qa[::-1, ::-1],
-                  'transpose': np.transpose(qa, (1, 0, 2)),
-              }
-              best = min(variants.items(), key=lambda kv: mse(kv[1], qb))
-              out.append('%s raw=%.0f best=%s=%.0f' % (name.replace('Readback_Upload_', ''), mse(qa, qb), best[0], mse(best[1], qb)))
-          print('::notice::RBQUAD ' + ' ~ '.join(out)[:2900])
+          import glob, os, re, traceback
+          def notice(tag, text):
+              print('::notice::%s %s' % (tag, text[:2900]))
+          try:
+              import numpy as np
+              from PIL import Image
+              RES = 'RendererTestOutput/Images_Result'
+              files = sorted(glob.glob(RES + '/*Readback*.png'))
+              notice('RBFILES', 'n=%d %s' % (len(files), ' '.join(os.path.basename(f) for f in files)))
+              cur = None
+              pairs = []
+              with open('renderertest-clean.log', errors='ignore') as fh:
+                  for line in fh:
+                      m = re.search(r"Executing Sub-Test: '([^']+)'", line)
+                      if m:
+                          cur = m.group(1); continue
+                      m = re.search(r"MSE of (\d+) exceeds threshold of (\d+) for image 'Images_Reference/([^']+)'", line)
+                      if m:
+                          pairs.append('%s|%s|%s/%s' % (cur, m.group(3), m.group(1), m.group(2)))
+              rb = [p for p in pairs if 'Readback' in p]
+              notice('RBPAIRS', ' ~ '.join(rb))
+          except Exception:
+              notice('RBERROR', traceback.format_exc().replace(chr(10), ' | '))
           PYEOF
 
       - name: Artifact - RendererTest output
