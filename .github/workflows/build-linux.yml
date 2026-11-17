@@ -468,67 +468,10 @@ jobs:
               if raw < fy * 0.5: raw_much_better += 1
           print('::notice::FORENSICS-SUMMARY files=%d noref=%d avg_raw_mse=%.0f avg_flipy_mse=%.0f flipy_much_better=%d raw_much_better=%d' % (n, noref, tot_raw / max(n, 1), tot_fy / max(n, 1), fy_much_better, raw_much_better))
           print('::notice::FORENSICS ' + '~'.join(rows))
-          # Emit a coarse ASCII map of where capture differs from ref, for the interesting files
-          DUMP = ['AdvancedFeatures_05_-_Compute_005','AdvancedFeatures_07_-_ProxyTexture_005','AdvancedFeatures_04_-_Tessellation_005','PipelineStates_09_-_GenerateMipMaps_005','PipelineStates_08_-_Texture2DArray_005','PipelineStates_07_-_Texture2D_005','PipelineStates_06_-_StructuredBuffer_008','AdvancedFeatures_06_-_FloatSampling_005','AdvancedFeatures_01_-_ReadRenderTarget_005','Basics_Rasterizer_States_010']
-          for cap in sorted(glob.glob(RES + '/*.png')):
-              name = os.path.basename(cap)[:-4]
-              if name not in DUMP:
-                  continue
-              ref_path = None
-              for t in TAGS:
-                  p = os.path.join(REFDIR, name + t + '.png')
-                  if os.path.exists(p):
-                      ref_path = p; break
-              if ref_path is None:
-                  continue
-              a = np.asarray(Image.open(cap).convert('RGBA'), dtype=np.float32)
-              b = np.asarray(Image.open(ref_path).convert('RGBA'), dtype=np.float32)
-              d = np.abs(a - b).max(axis=-1)
-              mask = (d > 40).astype(np.uint8) + (d > 10).astype(np.uint8)  # 1 or 2; 2 means >40
-              mimg = Image.fromarray(mask, 'L').resize((48, 14), Image.NEAREST)
-              mm = np.asarray(mimg)
-              lines = []
-              for y in range(mm.shape[0]):
-                  lines.append(''.join('#' if v >= 2 else ('+' if v == 1 else '.') for v in mm[y]))
-              print('::notice::DUMP %s | %s' % (name, ' | '.join(lines)))
-
-              # Quantitative signature: capture mean vs ref mean, row-band means, and the max-error block.
-              dm = np.abs(a - b).astype(np.uint8)
-              H, W = dm.shape[:2]
-              best_v, best_loc = -1.0, (0, 0)
-              for by in range(0, H // 16 + 1):
-                  for bx in range(0, W // 16 + 1):
-                      y0, x0 = by * 16, bx * 16
-                      blk = dm[y0:min(H, y0 + 32), x0:min(W, x0 + 32)]
-                      if blk.size == 0:
-                          continue
-                      n = blk.shape[0] * blk.shape[1] * 4
-                      v = float((blk.astype(np.int64) ** 2).sum()) / n
-                      if v > best_v:
-                          best_v, best_loc = v, (x0, y0)
-              bx0, by0 = best_loc
-              cap_blk = a[by0:by0 + 32, bx0:bx0 + 32].reshape(-1, 4).mean(0).round(0)
-              ref_blk = b[by0:by0 + 32, bx0:bx0 + 32].reshape(-1, 4).mean(0).round(0)
-              bands = []
-              for i in range(6):
-                  y0 = i * H // 6
-                  y1 = (i + 1) * H // 6
-                  bands.append('%s->%s' % (
-                      '/'.join(str(int(v)) for v in a[y0:y1].reshape(-1, 4).mean(0)[:4]),
-                      '/'.join(str(int(v)) for v in b[y0:y1].reshape(-1, 4).mean(0)[:4])))
-              print('::notice::SIG %s maxblk=%.0f@%d,%d capmean=%s refmean=%s blkcap=%s blkref=%s bands=%s' % (
-                  name, best_v, bx0, by0,
-                  '/'.join(str(int(v)) for v in a.reshape(-1, 4).mean(0)),
-                  '/'.join(str(int(v)) for v in b.reshape(-1, 4).mean(0)),
-                  '/'.join(str(int(v)) for v in cap_blk), '/'.join(str(int(v)) for v in ref_blk),
-                  ' '.join(bands)))
-          # Per-file A/B: compare sRGB-encode of the captured image vs the capture itself,
-          # to check the FRAMEBUFFER_SRGB fix hypothesis against the references.
-          def srgb_encode(x):
-              x = np.clip(x, 0.0, 1.0)
-              return np.where(x <= 0.0031308, 12.92 * x, 1.055 * np.power(x, 1.0/2.4) - 0.055)
-          ref_tag_cache = {}
-          better = 0; worse = 0; same = 0
+          # Compact one-annotation summary: for every capture with a reference, report the dominant
+          # colour of capture and reference plus means. Reveals scale/offset (colour-space) vs
+          # structural (missing draw / wrong target) differences without needing the artifact.
+          lines = []
           for cap in sorted(glob.glob(RES + '/*.png')):
               name = os.path.basename(cap)[:-4]
               ref_path = None
@@ -538,21 +481,20 @@ jobs:
                       ref_path = p; break
               if ref_path is None:
                   continue
-              a = np.asarray(Image.open(cap).convert('RGBA'), dtype=np.float32) / 255.0
-              b = np.asarray(Image.open(ref_path).convert('RGBA'), dtype=np.float32) / 255.0
+              a = np.asarray(Image.open(cap).convert('RGBA'), dtype=np.uint8)
+              b = np.asarray(Image.open(ref_path).convert('RGBA'), dtype=np.uint8)
               if a.shape != b.shape:
-                  continue
-              enc = a.copy()
-              enc[..., :3] = srgb_encode(a[..., :3])
-              mse_raw = float(((a - b) ** 2).mean())
-              mse_enc = float(((enc - b) ** 2).mean())
-              if mse_enc < mse_raw * 0.7:
-                  better += 1
-              elif mse_enc > mse_raw * 1.3:
-                  worse += 1
-              else:
-                  same += 1
-          print('::notice::SRGBFIX check: encode-helps=%d encode-hurts=%d encode-neutral=%d' % (better, worse, same))
+                  lines.append('%s=SHAPE%s/%s' % (name, a.shape, b.shape)); continue
+              def top(img):
+                  cols, counts = np.unique(img.reshape(-1, 4), axis=0, return_counts=True)
+                  i = int(np.argmax(counts))
+                  return '/'.join(str(int(v)) for v in cols[i]), counts[i] / float(img.shape[0] * img.shape[1])
+              ca, fa = top(a)
+              fb = top(b)
+              m_a = '/'.join(str(int(v)) for v in a.reshape(-1, 4).mean(0))
+              m_b = '/'.join(str(int(v)) for v in b.reshape(-1, 4).mean(0))
+              lines.append('%s cap[%s %.2f] ref[%s %.2f] m=%s/%s' % (name, ca, fa, fb[0], fb[1], m_a, m_b))
+          print('::notice::COLORS ' + ' ~ '.join(lines)[:3000])
           PYEOF
 
       - name: Artifact - RendererTest output
