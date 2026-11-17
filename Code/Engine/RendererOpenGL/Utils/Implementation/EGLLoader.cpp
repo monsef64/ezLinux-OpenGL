@@ -66,6 +66,7 @@ namespace ezEGL
       FunctionTable& t = state.m_Table;
       t.eglGetDisplay = reinterpret_cast<EGLDisplay (*)(EGLNativeDisplayType)>(load("eglGetDisplay"));
       t.eglInitialize = reinterpret_cast<EGLBoolean (*)(EGLDisplay, EGLint*, EGLint*)>(load("eglInitialize"));
+      t.eglBindAPI = reinterpret_cast<EGLBoolean (*)(EGLenum)>(load("eglBindAPI"));
       t.eglTerminate = reinterpret_cast<EGLBoolean (*)(EGLDisplay)>(load("eglTerminate"));
       t.eglGetConfigs = reinterpret_cast<EGLBoolean (*)(EGLDisplay, EGLConfig*, EGLint, EGLint*)>(load("eglGetConfigs"));
       t.eglChooseConfig = reinterpret_cast<EGLBoolean (*)(EGLDisplay, const EGLint*, EGLConfig*, EGLint, EGLint*)>(load("eglChooseConfig"));

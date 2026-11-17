@@ -87,13 +87,13 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
   spirv_cross::CompilerGLSL* compilers[ezGALShaderStage::ENUM_COUNT] = {nullptr};
 
   // Ensure all compilers are deleted when leaving this scope.
-  auto finally = ezMakeScopeExit([&] {
+  auto finally = ezMakeScopeExit([&]
+    {
     for (auto*& p : compilers)
     {
       delete p;
       p = nullptr;
-    }
-  });
+    } });
 
   // Parse all stages first.
   for (ezUInt32 stage = 0; stage < ezGALShaderStage::ENUM_COUNT; stage++)
@@ -108,6 +108,16 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
     try
     {
       compilers[stage] = new spirv_cross::CompilerGLSL(pSpirv, uiSpirvCount);
+
+      // The SPIR-V uses Vulkan-style separate texture and sampler objects. GLSL has no separate
+      // texture/sampler, so the aliased images and samplers must be combined into combined image samplers
+      // before resource collection or compilation, otherwise the GLSL backend throws
+      // "Cannot find mapping for combined sampler, was build_combined_image_samplers() used?".
+      // Shaders that use texelFetch / imageLoad without a sampler need a dummy sampler first;
+      // creating it must happen BEFORE build_combined_image_samplers(), which is where the
+      // 'texelFetch without sampler' error is raised.
+      compilers[stage]->build_dummy_sampler_for_combined_images();
+      compilers[stage]->build_combined_image_samplers();
     }
     catch (const spirv_cross::CompilerError& e)
     {
@@ -123,7 +133,8 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
   ezUInt32 uiNextImageUnit = 0;
   ezUInt32 uiNextAtomicCounter = 0;
 
-  auto FindOrAddEntry = [&flatEntries](BindingClass cls, ezInt16 iBindGroup, ezInt16 iSlot) -> FlatBindingEntry& {
+  auto FindOrAddEntry = [&flatEntries](BindingClass cls, ezInt16 iBindGroup, ezInt16 iSlot) -> FlatBindingEntry&
+  {
     for (auto& entry : flatEntries)
     {
       if (entry.m_Class == cls && entry.m_iBindGroup == iBindGroup && entry.m_iSlot == iSlot)
@@ -139,7 +150,8 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
     return flatEntries.PeekBack();
   };
 
-  auto addResourceList = [&](spirv_cross::CompilerGLSL* pCompiler, const spirv_cross::SmallVector<spirv_cross::Resource>& list, BindingClass cls) {
+  auto addResourceList = [&](spirv_cross::CompilerGLSL* pCompiler, const spirv_cross::SmallVector<spirv_cross::Resource>& list, BindingClass cls)
+  {
     for (const auto& resource : list)
     {
       const ezInt32 iBindGroup = static_cast<ezInt32>(pCompiler->get_decoration(resource.id, spv::DecorationDescriptorSet));
@@ -222,7 +234,8 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
     m_FlatBindings.Insert(MakeFlatBindingKey(entry.m_Class, entry.m_iBindGroup, entry.m_iSlot), entry.m_uiFlat);
   }
 
-  auto RemapResourceList = [&](spirv_cross::CompilerGLSL* pCompiler, const spirv_cross::SmallVector<spirv_cross::Resource>& list, BindingClass cls) {
+  auto RemapResourceList = [&](spirv_cross::CompilerGLSL* pCompiler, const spirv_cross::SmallVector<spirv_cross::Resource>& list, BindingClass cls)
+  {
     for (const auto& resource : list)
     {
       const ezInt32 iBindGroup = static_cast<ezInt32>(pCompiler->get_decoration(resource.id, spv::DecorationDescriptorSet));
@@ -240,17 +253,52 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
 
   ezStringBuilder stageGLSL[ezGALShaderStage::ENUM_COUNT];
 
-  // Set GLSL options and remap each stage.
-  for (ezUInt32 stage = 0; stage < ezGALShaderStage::ENUM_COUNT; stage++)
+  // Desktop GLSL cannot express blocks whose members use scalar packing with arbitrary 4 byte alignment (e.g. material structured buffers with ez's relaxed layout),
+  // even with enhanced layouts. Retrying the failed stage with Vulkan semantics lets SPIRV-Cross emit scalar block layout (GL_EXT_scalar_block_layout) instead.
+  // The emitted 'set = N' qualifiers are meaningless in desktop GL and are stripped again below.
+  auto StripSetQualifiers = [](ezStringBuilder& ref_sGLSL)
   {
-    spirv_cross::CompilerGLSL* pCompiler = compilers[stage];
-    if (pCompiler == nullptr)
-      continue;
+    ezStringBuilder sOut;
+    const ezUInt32 uiSize = ref_sGLSL.GetElementCount();
+    sOut.Reserve(uiSize);
+    ezStringView sRest = ref_sGLSL.GetView();
+    while (true)
+    {
+      const char* szFound = sRest.FindSubString("set = ");
+      if (szFound == nullptr)
+      {
+        sOut.Append(sRest);
+        break;
+      }
+      const size_t uiPrefix = static_cast<size_t>(szFound - sRest.GetStartPointer());
+      sOut.Append(ezStringView(sRest.GetStartPointer(), szFound));
 
+      const char* szNum = szFound + 6;
+      while (*szNum >= '0' && *szNum <= '9')
+        ++szNum;
+      if (*szNum == ',') // 'set = N, ' is always the first qualifier in a layout() list
+      {
+        ++szNum;
+        if (*szNum == ' ')
+          ++szNum;
+        sRest = ezStringView(szNum, sRest.GetEndPointer());
+      }
+      else
+      {
+        // Not in the expected form; keep the text as-is.
+        sOut.Append(ezStringView(szFound, szNum));
+        sRest = ezStringView(szNum, sRest.GetEndPointer());
+      }
+    }
+    ref_sGLSL = sOut;
+  };
+
+  auto ConvertStage = [&](spirv_cross::CompilerGLSL* pCompiler, ezUInt32 uiStage, bool bVulkanSemantics) -> ezResult
+  {
     spirv_cross::CompilerGLSL::Options options;
     options.version = 450;
     options.es = false;
-    options.vulkan_semantics = false;
+    options.vulkan_semantics = bVulkanSemantics;
     options.emit_push_constant_as_uniform_buffer = true;
     options.enable_420pack_extension = false;
     pCompiler->set_common_options(options);
@@ -288,14 +336,44 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
       }
     }
 
+    stageGLSL[uiStage].Set(pCompiler->compile().c_str());
+    if (bVulkanSemantics)
+    {
+      StripSetQualifiers(stageGLSL[uiStage]);
+    }
+    return EZ_SUCCESS;
+  };
+
+  // Set GLSL options and remap each stage.
+  for (ezUInt32 stage = 0; stage < ezGALShaderStage::ENUM_COUNT; stage++)
+  {
+    spirv_cross::CompilerGLSL* pCompiler = compilers[stage];
+    if (pCompiler == nullptr)
+      continue;
+
     try
     {
-      stageGLSL[stage].Set(pCompiler->compile().c_str());
+      ConvertStage(pCompiler, stage, false).IgnoreResult();
     }
     catch (const spirv_cross::CompilerError& e)
     {
-      ezLog::Error("Failed to convert SPIR-V to GLSL for stage {0}: {1}", ezGALShaderStage::Names[stage], e.what());
-      return EZ_FAILURE;
+      // Retry the stage with Vulkan semantics so scalar-layout blocks can be emitted as scalar block layout.
+      ezLog::Info("Failed to convert stage {0} to desktop GLSL ({1}); retrying with scalar block layout.", ezGALShaderStage::Names[stage], e.what());
+      const ezGALShaderByteCode* pByteCode = m_Description.m_ByteCodes[stage].Borrow();
+      const ezUInt32* pSpirv = reinterpret_cast<const ezUInt32*>(pByteCode->GetByteCode());
+      const size_t uiSpirvCount = pByteCode->GetSize() / 4;
+      try
+      {
+        spirv_cross::CompilerGLSL retryCompiler(pSpirv, uiSpirvCount);
+        retryCompiler.build_dummy_sampler_for_combined_images();
+        retryCompiler.build_combined_image_samplers();
+        ConvertStage(&retryCompiler, stage, true).IgnoreResult();
+      }
+      catch (const spirv_cross::CompilerError& e2)
+      {
+        ezLog::Error("Failed to convert SPIR-V to GLSL for stage {0}: {1}", ezGALShaderStage::Names[stage], e2.what());
+        return EZ_FAILURE;
+      }
     }
   }
 
@@ -309,7 +387,8 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
 
   GLuint stageShaders[ezGALShaderStage::ENUM_COUNT] = {0};
 
-  auto cleanupShaders = ezMakeScopeExit([&] {
+  auto cleanupShaders = ezMakeScopeExit([&]
+    {
     for (auto& s : stageShaders)
     {
       if (s != 0)
@@ -317,8 +396,7 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
         glDeleteShader(s);
         s = 0;
       }
-    }
-  });
+    } });
 
   for (ezUInt32 stage = 0; stage < ezGALShaderStage::ENUM_COUNT; stage++)
   {

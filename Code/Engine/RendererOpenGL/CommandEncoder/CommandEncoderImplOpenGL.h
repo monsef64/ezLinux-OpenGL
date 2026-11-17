@@ -2,9 +2,9 @@
 
 #include <RendererOpenGL/RendererOpenGLDLL.h>
 
-#include <Foundation/Containers/StaticArray.h>
-#include <Foundation/Containers/HybridArray.h>
 #include <Foundation/Containers/HashTable.h>
+#include <Foundation/Containers/HybridArray.h>
+#include <Foundation/Containers/StaticArray.h>
 #include <RendererFoundation/CommandEncoder/CommandEncoderPlatformInterface.h>
 #include <RendererFoundation/Resources/RenderTargetSetup.h>
 
@@ -110,22 +110,25 @@ public:
   virtual void SetStencilReferencePlatform(ezUInt8 uiStencilRefValue) override;
 
 private:
+  /// Bound resources, flat binding is applied against the current program at draw time.
+  /// NOTE: the encoder lives across frames while GAL objects get destroyed at the end of frames,
+  /// so bound resources are cached as handles/GL names/value copies, never as raw pointers, which would dangle.
   struct BoundBufferRange
   {
-    const ezGALBufferOpenGL* m_pBuffer = nullptr;
+    ezGALBufferHandle m_hBuffer;
     ezUInt32 m_uiOffset = 0;
     ezUInt32 m_uiSize = EZ_GAL_WHOLE_SIZE;
   };
 
   struct BoundTexture
   {
-    const ezGALTextureOpenGL* m_pTexture = nullptr;
+    ezGALTextureHandle m_hTexture;
     ezGALTextureRange m_Range;
   };
 
   struct BoundImage
   {
-    const ezGALTextureOpenGL* m_pTexture = nullptr;
+    ezGALTextureHandle m_hTexture;
     ezUInt32 m_uiLevel = 0;
     ezUInt32 m_uiLayer = 0;
     bool m_bLayered = false;
@@ -165,22 +168,25 @@ private:
   GLuint m_uiVAO = 0;
   bool m_bVertexStateDirty = true;
   ezHybridArray<ezUInt32, EZ_GAL_MAX_VERTEX_ATTRIBUTE_COUNT> m_EnabledAttributeLocations;
-  ezStaticArray<const ezGALBufferOpenGL*, EZ_GAL_MAX_VERTEX_BUFFER_COUNT> m_BoundVertexBuffers;
+  ezStaticArray<GLuint, EZ_GAL_MAX_VERTEX_BUFFER_COUNT> m_BoundVertexBuffers;
   ezStaticArray<ezUInt32, EZ_GAL_MAX_VERTEX_BUFFER_COUNT> m_VertexBufferOffsets;
 
-  const ezGALBufferOpenGL* m_pBoundIndexBuffer = nullptr;
+  bool m_bIndexBufferBound = false;
+  ezEnum<ezGALIndexType> m_BoundIndexType = ezGALIndexType::UInt;
 
-  // Bound resources, flat binding is applied against the current program at draw time.
-  ezHashTable<ezUInt32, const ezGALBufferOpenGL*> m_BoundUniformBuffers;
+  // Bound resources, flat binding is applied against the current program at draw time. See note above.
+  ezHashTable<ezUInt32, ezGALBufferHandle> m_BoundUniformBuffers;
   ezHashTable<ezUInt32, BoundBufferRange> m_BoundStorageBuffers;
   ezHashTable<ezUInt32, BoundTexture> m_BoundTextures;
   ezHashTable<ezUInt32, BoundImage> m_BoundImages;
-  ezHashTable<ezUInt32, const ezGALSamplerStateOpenGL*> m_BoundSamplers;
+  ezHashTable<ezUInt32, ezGALSamplerStateHandle> m_BoundSamplers;
   bool m_bResourceStateDirty = true;
 
-  // Bound pipelines
-  const ezGALGraphicsPipelineOpenGL* m_pBoundGraphicsPipeline = nullptr;
-  const ezGALComputePipelineOpenGL* m_pBoundComputePipeline = nullptr;
+  // Bound pipelines (cached by value; the pipeline objects themselves may be destroyed while the encoder persists)
+  ezGALGraphicsPipelineCreationDescription m_BoundGraphicsPipelineDesc;
+  ezGALComputePipelineCreationDescription m_BoundComputePipelineDesc;
+  bool m_bGraphicsPipelineSet = false;
+  bool m_bComputePipelineSet = false;
   bool m_bPipelineStateDirty = true;
   bool m_bStencilRefDirty = true;
   ezUInt8 m_uiStencilRef = 0;

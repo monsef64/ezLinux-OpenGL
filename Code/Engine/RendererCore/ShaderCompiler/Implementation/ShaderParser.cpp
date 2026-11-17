@@ -774,6 +774,54 @@ void AlignStructuredBufferDX(ezShaderConstantBufferLayout& ref_materialConstantB
   ref_materialConstantBufferLayout.m_uiTotalSize = uiCurrentOffset;
 }
 
+void AlignStructuredBufferStd430(ezShaderConstantBufferLayout& ref_materialConstantBufferLayout)
+{
+  // Strict OpenGL / Vulkan std430 layout for structured buffers. Scalars keep component alignment,
+  // vec2s are 8-byte aligned, vec3s and vec4s are 16-byte aligned. Matrices are stored column-major
+  // with a vec4 stride, so they are 16-byte aligned as well.
+  auto getAlignment = [](ezShaderConstant::Type::Enum type) -> ezUInt32
+  {
+    switch (type)
+    {
+      case ezShaderConstant::Type::Float1:
+      case ezShaderConstant::Type::Int1:
+      case ezShaderConstant::Type::UInt1:
+      case ezShaderConstant::Type::Bool:
+        return 4;
+
+      case ezShaderConstant::Type::Float2:
+      case ezShaderConstant::Type::Int2:
+      case ezShaderConstant::Type::UInt2:
+        return 8;
+
+      case ezShaderConstant::Type::Float3:
+      case ezShaderConstant::Type::Int3:
+      case ezShaderConstant::Type::UInt3:
+      case ezShaderConstant::Type::Float4:
+      case ezShaderConstant::Type::Int4:
+      case ezShaderConstant::Type::UInt4:
+      case ezShaderConstant::Type::Mat3x3:
+      case ezShaderConstant::Type::Mat4x4:
+      case ezShaderConstant::Type::Transform:
+      case ezShaderConstant::Type::Struct:
+        return 16;
+
+      default:
+        return 16;
+    }
+  };
+
+  ezUInt32 uiCurrentOffset = 0;
+  for (ezShaderConstant& constant : ref_materialConstantBufferLayout.m_Constants)
+  {
+    const ezUInt32 uiConstantSize = s_ShaderConstantSize[constant.m_Type];
+    uiCurrentOffset = AlignSize(uiCurrentOffset, getAlignment(constant.m_Type));
+    constant.m_uiOffset = uiCurrentOffset;
+    uiCurrentOffset += uiConstantSize;
+  }
+  ref_materialConstantBufferLayout.m_uiTotalSize = uiCurrentOffset;
+}
+
 void AlignStructuredBufferStd430Relaxed(ezShaderConstantBufferLayout& ref_materialConstantBufferLayout)
 {
   ezUInt32 uiCurrentOffset = 0;
@@ -839,6 +887,9 @@ void ezShaderParser::LayoutMaterialConstants(ezShaderConstantBufferLayout& ref_m
   {
     case ezGALBufferLayout::Vulkan_Std430_relaxed:
       AlignStructuredBufferStd430Relaxed(ref_materialConstantBufferLayout);
+      break;
+    case ezGALBufferLayout::Vulkan_Std430:
+      AlignStructuredBufferStd430(ref_materialConstantBufferLayout);
       break;
     case ezGALBufferLayout::DirectX_StructuredButter:
       AlignStructuredBufferDX(ref_materialConstantBufferLayout);

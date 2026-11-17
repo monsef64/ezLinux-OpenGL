@@ -1424,6 +1424,31 @@ void ezTestFramework::SetImageReferenceTagsFromEnvironment(ezStringView sPlatfor
       AddImageReferenceTag("intel");
     }
   }
+  else if (sRenderer.IsEqual_NoCase("OpenGL") || sRenderer.IsEqual_NoCase("GL"))
+  {
+    AddImageReferenceTag("opengl");
+
+    if (bIsLLVMPipe)
+    {
+      AddImageReferenceTag("llvmpipe");
+    }
+    else if (bIsSwiftShader)
+    {
+      AddImageReferenceTag("swiftshader");
+    }
+    else if (bIsAMD)
+    {
+      AddImageReferenceTag("amd");
+    }
+    else if (bIsNvidia)
+    {
+      AddImageReferenceTag("nvidia");
+    }
+    else if (bIsIntel)
+    {
+      AddImageReferenceTag("intel");
+    }
+  }
 }
 
 void ezTestFramework::WriteImageDiffHtml(const char* szFileName, const ezImage& referenceImgRgb, const ezImage& referenceImgAlpha, const ezImage& capturedImgRgb, const ezImage& capturedImgAlpha, const ezImage& diffImgRgb, const ezImage& diffImgAlpha, ezUInt32 uiError, ezUInt32 uiThreshold, ezUInt8 uiMinDiffRgb, ezUInt8 uiMaxDiffRgb,

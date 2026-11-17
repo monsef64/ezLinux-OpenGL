@@ -1,5 +1,6 @@
 #include <RendererOpenGL/RendererOpenGLPCH.h>
 
+#include <Core/ResourceManager/Resource.h>
 #include <Core/System/Window.h>
 #include <Foundation/Configuration/Startup.h>
 #include <Foundation/Profiling/Profiling.h>
@@ -47,6 +48,12 @@ EZ_BEGIN_SUBSYSTEM_DECLARATION(RendererOpenGL, DeviceFactoryOpenGL)
 
 ON_CORESYSTEMS_STARTUP
 {
+  // Force graphics resource updates onto the main thread.
+  // ezEngine otherwise updates shaders, textures and meshes on worker threads. The OpenGL backend uses a single GL
+  // context that is current only on the main thread, so GAL resource creation on worker threads is not possible without
+  // per-thread shared EGL contexts. ezResource::UpdateGraphicsResource is the renderer-configured knob for this.
+  ezResource::UpdateGraphicsResource = ezResource::DoUpdate::OnMainThread;
+
   // The OpenGL backend consumes SPIR-V bytecode that is converted to GLSL at load time.
   // It therefore registers its own shader model ("OPENGL") together with the ezShaderCompilerOpenGL
   // plugin, which inherits the DXC based SPIR-V compiler from ezShaderCompilerVulkan. The shaders
@@ -66,6 +73,10 @@ EZ_END_SUBSYSTEM_DECLARATION;
 ezGALDeviceOpenGL::ezGALDeviceOpenGL(const ezGALDeviceCreationDescription& Description)
   : ezGALDevice(Description)
 {
+  // Same configuration as ON_CORESYSTEMS_STARTUP above; repeated here so it also applies
+  // when the backend is only linked and the subsystem has not been started yet.
+  // The single GL context is only current on the main thread.
+  ezResource::UpdateGraphicsResource = ezResource::DoUpdate::OnMainThread;
 }
 
 ezGALDeviceOpenGL::~ezGALDeviceOpenGL() = default;
@@ -126,6 +137,11 @@ ezResult ezGALDeviceOpenGL::InitPlatform()
 
   ezClipSpaceDepthRange::Default = ezClipSpaceDepthRange::ZeroToOne;
   ezClipSpaceYMode::RenderToTextureDefault = m_bClipControl ? ezClipSpaceYMode::Regular : ezClipSpaceYMode::Flipped;
+
+  // Writes to sRGB framebuffers must convert linear colors to sRGB, like on D3D/Vulkan.
+  // The GL specification leaves FRAMEBUFFER_SRGB disabled on some implementations (e.g. Mesa),
+  // so enable it explicitly. It only affects attachments with an sRGB internal format.
+  glEnable(GL_FRAMEBUFFER_SRGB);
 
   {
     GLint iMaxTextureImageUnits = 0;
@@ -228,40 +244,106 @@ ezResult ezGALDeviceOpenGL::InitEGL()
   const char* szClientAPIs = m_pEGL->eglQueryString(m_pEGLDisplay, 0x308D /* EGL_CLIENT_APIS */);
   ezLog::Info("OpenGL: EGL {0}.{1}, vendor '{2}', client APIs '{3}'", m_iEGLMajor, m_iEGLMinor, szVendor != nullptr ? szVendor : "<unknown>", szClientAPIs != nullptr ? szClientAPIs : "<unknown>");
 
+  // The initial client API is EGL_OPENGL_ES_API. Desktop OpenGL context creation requires
+  // binding the OpenGL client API first, otherwise eglCreateContext fails with EGL_BAD_MATCH
+  // (e.g. on Mesa).
+  if (m_pEGL->eglBindAPI == nullptr || m_pEGL->eglBindAPI(ezEGL::EGL_OPENGL_API) == 0)
+  {
+    ezLog::Error("eglBindAPI(EGL_OPENGL_API) failed: {0}", m_pEGL->eglBindAPI == nullptr ? ezStringView("symbol not found") : ezStringView(ezEGL::GetErrorString(m_pEGL->eglGetError())));
+    DeinitEGL();
+    return EZ_FAILURE;
+  }
+
   // Choose a config that is usable both for the hidden pbuffer and for window surfaces.
+  // Headless EGL platforms (e.g. Mesa's surfaceless platform) provide no WINDOW-capable
+  // configs, so fall back to a PBUFFER-only config in that case. Window swap-chains pick their
+  // own window-capable configs independently when a native window exists.
   const ezEGL::EGLint configAttribs[] = {
-    ezEGL::EGL_RED_SIZE, 8,
-    ezEGL::EGL_GREEN_SIZE, 8,
-    ezEGL::EGL_BLUE_SIZE, 8,
-    ezEGL::EGL_ALPHA_SIZE, 8,
-    ezEGL::EGL_DEPTH_SIZE, 24,
-    ezEGL::EGL_STENCIL_SIZE, 8,
-    ezEGL::EGL_SURFACE_TYPE, ezEGL::EGL_WINDOW_BIT | ezEGL::EGL_PBUFFER_BIT,
-    ezEGL::EGL_RENDERABLE_TYPE, ezEGL::EGL_OPENGL_BIT,
+    ezEGL::EGL_RED_SIZE,
+    8,
+    ezEGL::EGL_GREEN_SIZE,
+    8,
+    ezEGL::EGL_BLUE_SIZE,
+    8,
+    ezEGL::EGL_ALPHA_SIZE,
+    8,
+    ezEGL::EGL_DEPTH_SIZE,
+    24,
+    ezEGL::EGL_STENCIL_SIZE,
+    8,
+    ezEGL::EGL_SURFACE_TYPE,
+    ezEGL::EGL_WINDOW_BIT | ezEGL::EGL_PBUFFER_BIT,
+    ezEGL::EGL_RENDERABLE_TYPE,
+    ezEGL::EGL_OPENGL_BIT,
+    ezEGL::EGL_NONE,
+  };
+  const ezEGL::EGLint configAttribsPbufferOnly[] = {
+    ezEGL::EGL_RED_SIZE,
+    8,
+    ezEGL::EGL_GREEN_SIZE,
+    8,
+    ezEGL::EGL_BLUE_SIZE,
+    8,
+    ezEGL::EGL_ALPHA_SIZE,
+    8,
+    ezEGL::EGL_DEPTH_SIZE,
+    24,
+    ezEGL::EGL_STENCIL_SIZE,
+    8,
+    ezEGL::EGL_SURFACE_TYPE,
+    ezEGL::EGL_PBUFFER_BIT,
+    ezEGL::EGL_RENDERABLE_TYPE,
+    ezEGL::EGL_OPENGL_BIT,
     ezEGL::EGL_NONE,
   };
 
   ezEGL::EGLConfig config = nullptr;
   ezEGL::EGLint iConfigCount = 0;
-  if (m_pEGL->eglChooseConfig(m_pEGLDisplay, configAttribs, &config, 1, &iConfigCount) == 0 || iConfigCount == 0)
+  const ezEGL::EGLBoolean bChooseOk = m_pEGL->eglChooseConfig(m_pEGLDisplay, configAttribs, &config, 1, &iConfigCount);
+  if ((bChooseOk == 0 || iConfigCount == 0))
   {
-    ezLog::Error("eglChooseConfig failed (no suitable config found): {0}", ezStringView(ezEGL::GetErrorString(m_pEGL->eglGetError())));
-    DeinitEGL();
-    return EZ_FAILURE;
+    ezEGL::EGLConfig pbufferConfig = nullptr;
+    ezEGL::EGLint iPbufferConfigCount = 0;
+    const ezEGL::EGLBoolean bPbufferOk = m_pEGL->eglChooseConfig(m_pEGLDisplay, configAttribsPbufferOnly, &pbufferConfig, 1, &iPbufferConfigCount);
+    if (bPbufferOk != 0 && iPbufferConfigCount > 0)
+    {
+      ezLog::Info("OpenGL: no window-capable EGL config found; falling back to a pbuffer-only config (headless mode)");
+      config = pbufferConfig;
+      iConfigCount = iPbufferConfigCount;
+    }
+    else if (bChooseOk == 0)
+    {
+      ezLog::Error("eglChooseConfig failed: {0}", ezStringView(ezEGL::GetErrorString(m_pEGL->eglGetError())));
+      DeinitEGL();
+      return EZ_FAILURE;
+    }
+    else
+    {
+      ezLog::Error("eglChooseConfig failed (no suitable config found)");
+      DeinitEGL();
+      return EZ_FAILURE;
+    }
   }
 
   // Try to create a core profile context; fall back to a lower version if the driver refuses.
   const ezEGL::EGLint contextAttribs45[] = {
-    ezEGL::EGL_CONTEXT_MAJOR_VERSION_KHR, 4,
-    ezEGL::EGL_CONTEXT_MINOR_VERSION_KHR, 5,
-    ezEGL::EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR, ezEGL::EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
-    ezEGL::EGL_CONTEXT_FLAGS_KHR, m_Description.m_bDebugDevice ? ezEGL::EGL_CONTEXT_OPENGL_DEBUG_BIT_KHR : 0,
+    ezEGL::EGL_CONTEXT_MAJOR_VERSION_KHR,
+    4,
+    ezEGL::EGL_CONTEXT_MINOR_VERSION_KHR,
+    5,
+    ezEGL::EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR,
+    ezEGL::EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
+    ezEGL::EGL_CONTEXT_FLAGS_KHR,
+    m_Description.m_bDebugDevice ? ezEGL::EGL_CONTEXT_OPENGL_DEBUG_BIT_KHR : 0,
     ezEGL::EGL_NONE,
   };
   const ezEGL::EGLint contextAttribs33[] = {
-    ezEGL::EGL_CONTEXT_MAJOR_VERSION_KHR, 3,
-    ezEGL::EGL_CONTEXT_MINOR_VERSION_KHR, 3,
-    ezEGL::EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR, ezEGL::EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
+    ezEGL::EGL_CONTEXT_MAJOR_VERSION_KHR,
+    3,
+    ezEGL::EGL_CONTEXT_MINOR_VERSION_KHR,
+    3,
+    ezEGL::EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR,
+    ezEGL::EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
     ezEGL::EGL_NONE,
   };
 
@@ -283,8 +365,10 @@ ezResult ezGALDeviceOpenGL::InitEGL()
   ezEGL::EGLConfig usedConfig = config;
 
   const ezEGL::EGLint pbufferAttribs[] = {
-    ezEGL::EGL_WIDTH, 1,
-    ezEGL::EGL_HEIGHT, 1,
+    ezEGL::EGL_WIDTH,
+    1,
+    ezEGL::EGL_HEIGHT,
+    1,
     ezEGL::EGL_NONE,
   };
   m_pPbufferSurface = m_pEGL->eglCreatePbufferSurface(m_pEGLDisplay, usedConfig, pbufferAttribs);
@@ -901,18 +985,11 @@ ezEnum<ezGALAsyncResult> ezGALDeviceOpenGL::GetFenceResultPlatform(ezGALFenceHan
 
   const GLenum res = glClientWaitSync(fence, flags, uiTimeoutNs);
 
+  // Fences can be queried multiple times (e.g. GetReadbackResult() followed by LockTexture() re-queries the
+  // same fence), so a fence must remain valid after it was signaled. Sync objects stay alive until glDeleteSync;
+  // only frame-submit fences are reclaimed in ReclaimFinishedFrames(), everything else lives until shutdown.
   if (res == GL_ALREADY_SIGNALED || res == GL_CONDITION_SATISFIED)
   {
-    EraseFenceInternal(m_Fences, fence);
-    glDeleteSync(fence);
-    for (PerFrameData& data : m_PerFrameData)
-    {
-      if (data.m_hFence == hFence)
-      {
-        data.m_hFence = {};
-        data.m_uiFrame = ezUInt64(-1);
-      }
-    }
     return ezGALAsyncResult::Ready;
   }
   else if (res == GL_TIMEOUT_EXPIRED)
@@ -921,8 +998,6 @@ ezEnum<ezGALAsyncResult> ezGALDeviceOpenGL::GetFenceResultPlatform(ezGALFenceHan
   }
 
   EZ_REPORT_FAILURE("glClientWaitSync failed with GL_WAIT_FAILED");
-  EraseFenceInternal(m_Fences, fence);
-  glDeleteSync(fence);
   return ezGALAsyncResult::Expired;
 }
 
@@ -1134,7 +1209,7 @@ void ezGALDeviceOpenGL::FillCapabilitiesPlatform()
 
   m_Capabilities.m_bSupportsMultithreadedResourceCreation = false;
   m_Capabilities.m_bSupportsMultipleBindGroups = true;
-  m_Capabilities.m_materialBufferLayout = ezGALBufferLayout::Vulkan_Std430_relaxed;
+  m_Capabilities.m_materialBufferLayout = ezGALBufferLayout::Vulkan_Std430;
 
   for (ezUInt32 i = 0; i < ezGALShaderStage::ENUM_COUNT; ++i)
   {
@@ -1169,8 +1244,27 @@ void ezGALDeviceOpenGL::FillCapabilitiesPlatform()
       support.Add(ezGALResourceFormatSupport::VertexAttribute);
     }
 
-    // Color and depth formats can be used as render targets; GL only validates this at FBO completeness time.
-    support.Add(ezGALResourceFormatSupport::RenderTarget);
+    // Ask GL which formats are renderable instead of assuming it; block compressed formats
+    // defeat FBO completeness at draw time and must not advertise RenderTarget support.
+    {
+      GLint iRenderable = 0;
+      if (glGetInternalformativ != nullptr)
+      {
+        GLenum eRenderableQuery = GL_COLOR_RENDERABLE;
+        if (ezGALResourceFormat::IsDepthFormat(format))
+          eRenderableQuery = GL_DEPTH_RENDERABLE;
+        else if (ezGALResourceFormat::IsStencilFormat(format))
+          eRenderableQuery = GL_STENCIL_RENDERABLE;
+
+        glGetInternalformativ(GL_TEXTURE_2D, eInternalFormat, eRenderableQuery, 1, &iRenderable);
+      }
+      else if (!ezMappingTables::IsBlockCompressedFormat(format, uiBlockBytes))
+      {
+        iRenderable = 1;
+      }
+      if (iRenderable > 0)
+        support.Add(ezGALResourceFormatSupport::RenderTarget);
+    }
 
     // Query MSAA sample counts for 2D multisample targets
     GLint iSamplesCount = 0;

@@ -236,15 +236,25 @@ namespace ezMappingTables
     {
       case ezGALResourceFormat::RGBAFloat: return GL_RGBA32F;
       case ezGALResourceFormat::RGBAUInt: return GL_RGBA32UI;
+      case ezGALResourceFormat::RGBFloat:
+        return GL_RGB32F;
+      case ezGALResourceFormat::RGBUInt:
+        return GL_RGB32UI;
+      case ezGALResourceFormat::RGBInt:
+        return GL_RGB32I;
       case ezGALResourceFormat::RGBAInt: return GL_RGBA32I;
       case ezGALResourceFormat::RGBAHalf: return GL_RGBA16F;
       case ezGALResourceFormat::RGBAUShort: return GL_RGBA16UI;
       case ezGALResourceFormat::RGBAUShortNormalized: return GL_RGBA16;
       case ezGALResourceFormat::RGBAShort: return GL_RGBA16I;
+      case ezGALResourceFormat::RGBAShortNormalized:
+        return GL_RGBA16_SNORM;
       case ezGALResourceFormat::RGFloat: return GL_RG32F;
       case ezGALResourceFormat::RGUInt: return GL_RG32UI;
       case ezGALResourceFormat::RGInt: return GL_RG32I;
       case ezGALResourceFormat::RGBAUByteNormalized: return GL_RGBA8;
+      case ezGALResourceFormat::BGRAUByteNormalized:
+        return GL_RGBA8;                                                  // the texture is internally GL_RGBA8; GL has no separate BGRA image format
       case ezGALResourceFormat::RGBAUByteNormalizedsRGB: return GL_RGBA8; // images can't be srgb-qualified, use unorm
       case ezGALResourceFormat::RGBAUByte: return GL_RGBA8UI;
       case ezGALResourceFormat::RGBAByteNormalized: return GL_RGBA8_SNORM;
@@ -253,8 +263,14 @@ namespace ezMappingTables
       case ezGALResourceFormat::RGUShort: return GL_RG16UI;
       case ezGALResourceFormat::RGUShortNormalized: return GL_RG16;
       case ezGALResourceFormat::RGShort: return GL_RG16I;
+      case ezGALResourceFormat::RGShortNormalized:
+        return GL_RG16_SNORM;
       case ezGALResourceFormat::RGUByte: return GL_RG8UI;
       case ezGALResourceFormat::RGUByteNormalized: return GL_RG8;
+      case ezGALResourceFormat::RGByte:
+        return GL_RG8I;
+      case ezGALResourceFormat::RGByteNormalized:
+        return GL_RG8_SNORM;
       case ezGALResourceFormat::RFloat: return GL_R32F;
       case ezGALResourceFormat::RUInt: return GL_R32UI;
       case ezGALResourceFormat::RInt: return GL_R32I;
@@ -264,6 +280,10 @@ namespace ezMappingTables
       case ezGALResourceFormat::RByte: return GL_R8I;
       case ezGALResourceFormat::RUByte: return GL_R8UI;
       case ezGALResourceFormat::RUByteNormalized: return GL_R8;
+      case ezGALResourceFormat::RByteNormalized:
+        return GL_R8_SNORM;
+      case ezGALResourceFormat::AUByteNormalized:
+        return GL_R8;
       default: return 0;
     }
   }
@@ -275,10 +295,10 @@ namespace ezMappingTables
 #ifndef GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
 #  define GL_COMPRESSED_RGBA_S3TC_DXT1_EXT 0x83F1
 #  define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT 0x8C4D
-#  define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT 0x83F3
-#  define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT 0x8C4F
-#  define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT 0x83F5
-#  define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT 0x8C51
+#  define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT 0x83F2
+#  define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT 0x8C4E
+#  define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT 0x83F3
+#  define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT 0x8C4F
 #endif
 
 namespace ezMappingTables

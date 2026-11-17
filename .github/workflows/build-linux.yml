@@ -41,10 +41,9 @@ jobs:
         # - CMAKE_POLICY_VERSION_MINIMUM=3.5 is required because ubuntu-latest ships CMake >= 4, which
         #   removed compatibility with cmake_minimum_required < 3.5 (SPIRV-Cross declares 3.1).
         #   Without it, configure fails with: Compatibility with CMake < 3.5 has been removed from CMake.
-        # - Vulkan is OFF: on Linux it downloads the DXC toolchain from a GitHub release asset on first
-        #   configure (that works on GitHub-hosted runners), but the Linux Vulkan build is not yet
-        #   validated. Enable EZ_BUILD_VULKAN=ON once it is; that also builds ezShaderCompilerOpenGL,
-        #   which requires the DXC-based shader compiler toolchain.
+        # - Vulkan is OFF: the Vulkan RENDERER does not compile on Linux (RendererVulkan has
+        #   #error guards there) and now defaults to OFF on Linux. The DXC based shader compiler
+        #   toolchain is independent of the renderer; enable it with -DEZ_BUILD_SHADERCOMPILER_DXC=ON.
         # - GLFW is OFF: the X11/GLFW window path is optional; without it the engine falls back to the
         #   NoImpl window, which is all that is needed to compile the engine and tests.
         # - Qt, RMLUI and OpenXR are OFF for the same reason: not required for a plain build.
@@ -67,3 +66,128 @@ jobs:
           name: linux-gcc-debug-binaries
           path: Output/Bin/LinuxNinjaGccDebug64
           retention-days: 3
+
+  test-renderer:
+    name: RendererTest (ubuntu-24.04, OpenGL via Mesa llvmpipe)
+    # Pinned to 24.04: ubuntu-latest has moved to Ubuntu 26 where the Mesa package names
+    # changed; 24.04 (noble) ships the documented mesa names used below.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+
+      - name: Initialize ThirdParty submodules
+        run: git submodule update --init --depth 1 Code/ThirdParty/assimp Code/ThirdParty/fmod Code/ThirdParty/SPIRV-Cross
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          # Mesa (llvmpipe) provides a software GL 4.5 implementation so the OpenGL renderer
+          # can be exercised headless through EGL's surfaceless platform.
+          # libegl-mesa0 is the Mesa EGL vendor driver that glvnd dispatches to -
+          # libegl1 alone is only the dispatch layer.
+          # libvulkan-dev is required by find_package(Vulkan) at configure time.
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build git ca-certificates \
+            libvulkan-dev libxcb1-dev \
+            libegl1 libegl-mesa0 libgl1-mesa-dri libglx-mesa0 libglapi-mesa
+        # ubuntu-24.04 ships CMake 3.28; -DCMAKE_POLICY_VERSION_MINIMUM=3.5 is ignored there (harmless),
+        # and required on newer images where CMake >= 4 removed < 3.5 compatibility.
+
+      - name: Configure (linux-gcc-debug, DXC toolchain ON)
+        # The DXC based shader compiler toolchain is enabled independently of the Vulkan renderer
+        # (the renderer does not compile on Linux). Configure downloads the DXC toolchain from a
+        # GitHub release asset (reachable from GitHub-hosted runners) on first configure.
+        # That builds ShaderCompilerDXC / ShaderCompilerVulkan / ShaderCompilerOpenGL, which
+        # RendererTest needs to compile shaders at run time. RendererVulkan is NOT built
+        # (EZ_BUILD_VULKAN defaults to OFF on Linux).
+        run: |
+          cmake --preset linux-gcc-debug \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DEZ_ENABLE_QT_SUPPORT=OFF \
+            -DEZ_BUILD_RMLUI=OFF \
+            -DEZ_BUILD_OPENXR=OFF \
+            -DEZ_BUILD_VULKAN=OFF \
+            -DEZ_BUILD_SHADERCOMPILER_DXC=ON \
+            -DEZ_3RDPARTY_GLFW_SUPPORT=OFF \
+            -DEZ_BUILD_OPENGL=ON
+
+      - name: Build
+        # On failure, surface compiler errors as CI annotations (visible via the Checks API without
+        # needing the full job log).
+        run: |
+          set +e
+          ninja -C Workspace/linux-gcc-debug GameEngine RendererOpenGL ShaderCompilerOpenGL RendererTest > build.log 2>&1
+          code=$?
+          set -e
+          if [ $code -ne 0 ]; then
+            echo "=== build.log (last 150 lines) ==="
+            tail -150 build.log
+            echo "=== errors as annotations ==="
+            grep -E "FAILED:|error:|fatal error|undefined reference|cannot find|collect2|ld: |ld returned" build.log | head -40 | while read -r line; do
+              # strip ninja's FAILED: prefix and file noise a bit
+              echo "::error::${line:0:400}"
+            done
+            exit $code
+          fi
+          tail -5 build.log
+
+      - name: Probe EGL (Mesa llvmpipe, surfaceless)
+        run: |
+          EGL_PLATFORM=surfaceless python3 - <<'PYEOF' | tee egl-probe.log || true
+          import ctypes
+          lib = ctypes.CDLL("libEGL.so.1")
+          lib.eglGetDisplay.restype = ctypes.c_void_p
+          d = lib.eglGetDisplay(0)  # EGL_DEFAULT_DISPLAY
+          print("eglGetDisplay ->", hex(d) if d else "FAILED")
+          maj, mnr = ctypes.c_int(), ctypes.c_int()
+          ok = lib.eglInitialize(d, ctypes.byref(maj), ctypes.byref(mnr))
+          print("eglInitialize ->", ok, "EGL version", maj.value, mnr.value)
+          r = lib.eglQueryString(d, 0x308D)  # EGL_CLIENT_APIS
+          print("client APIs:", ctypes.cast(r, ctypes.c_char_p).value if r else None)
+          r = lib.eglQueryString(d, 0x3053)  # EGL_VENDOR
+          print("vendor:", ctypes.cast(r, ctypes.c_char_p).value if r else None)
+          PYEOF
+          grep . egl-probe.log | while read -r line; do echo "::notice::EGL probe: $line"; done
+
+      - name: Run RendererTest (OpenGL, headless)
+        # Informational for now: no OpenGL reference images exist yet (image comparisons need
+        # baselines captured on a GL-capable machine), so image-comparison subtests are expected
+        # to fail until those are added. The interesting signal is whether the device initializes,
+        # shaders compile through SPIR-V -> GLSL (SPIRV-Cross) and how many suites pass.
+        # Output images/logs are uploaded as artifacts; key log lines are also emitted as CI
+        # annotations (visible via the Checks API without log access).
+        continue-on-error: true
+        run: |
+          export EGL_PLATFORM=surfaceless
+          export LIBGL_ALWAYS_SOFTWARE=1
+          set +e
+          ./Output/Bin/LinuxNinjaGccDebug64/RendererTest -noGui true -headless true -renderer OpenGL -outputDir "$PWD/RendererTestOutput" > renderertest.log 2>&1
+          code=$?
+          set -e
+          echo "RendererTest exit code: $code"
+          tail -150 renderertest.log
+          echo "=== consolidated diagnostics as two annotations (Checks API caps displayed annotations) ==="
+          sed -r 's/\x1b\[[0-9;]*m//g' renderertest.log > renderertest-clean.log
+          FAILING=$(grep -E "(Test|Sub-Test) '[^']*' failed" renderertest-clean.log | sed 's/ ([0-9.]* sec)\.//' | cut -c1-160 | tr '\n' '~')
+          SUMMARY=$(grep -E "Tests (failed|passed)" renderertest-clean.log | tail -2 | tr '\n' '~')
+          echo "::notice::failing: ${FAILING} | ${SUMMARY}"
+          HISTO=$(awk '/Executing Test:|Executing Sub-Test:/{cur=$0; next} /ezLog Error|Failure: |Comparison Image|Image Comparison Failed|queryValues|Block:|mismatch/{n[cur" +++ "substr($0,1,150)]++} END{for (k in n) printf "%d %s~", n[k], k}' renderertest-clean.log | sed 's/^ *//' | sort -rn | head -30)
+          echo "::notice::per-test-errors: ${HISTO:0:2900}"
+          if grep -qE "Tests failed: [1-9]" renderertest.log; then
+            echo "::warning::RendererTest reported failing suites. Expected until OpenGL reference images are captured; inspect the RendererTestOutput artifact."
+          fi
+
+      - name: Artifact - RendererTest output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: renderertest-output
+          path: |
+            RendererTestOutput
+            renderertest.log
+          retention-days: 7

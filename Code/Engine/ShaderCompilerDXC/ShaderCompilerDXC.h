@@ -15,7 +15,7 @@ public:
   virtual ezResult Compile(ezShaderProgramData& inout_data, ezLogInterface* pLog) override;
 
 protected:
-  virtual void ConfigureDxcArgs(ezDynamicArray<ezStringWChar>& inout_Args);
+  virtual void ConfigureDxcArgs(ezDynamicArray<ezStringWChar>& inout_Args, ezStringView sPlatform);
   virtual bool AllowCombinedImageSamplers() const { return true; }
 
 private:
@@ -37,7 +37,7 @@ private:
   ezResult FillUAVResourceBinding(ezShaderResourceBinding& binding, const SpvReflectDescriptorBinding& info);
   static ezGALShaderTextureType::Enum GetTextureType(const SpvReflectDescriptorBinding& info);
   ezResult Initialize();
-  ezResult CompileSPIRVShader(ezStringView sFile, ezStringView sSource, bool bDebug, ezStringView sProfile, ezStringView sEntryPoint, ezDynamicArray<ezUInt8>& out_ByteCode);
+  ezResult CompileSPIRVShader(ezStringView sFile, ezStringView sSource, bool bDebug, ezStringView sProfile, ezStringView sEntryPoint, ezDynamicArray<ezUInt8>& out_ByteCode, ezStringView sPlatform);
   ezStringView GetProfileName(ezStringView sPlatform, ezGALShaderStage::Enum Stage);
 
 private:

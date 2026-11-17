@@ -86,4 +86,20 @@ function(ez_add_renderers TARGET_NAME)
 			)
 		endif()
 	endif()
+
+	# The DXC based shader compiler toolchain is independent of the renderers (e.g. on Linux the
+	# Vulkan renderer is not built, but the shader compilers are). Make sure applications that
+	# rely on runtime shader compilation also get the plugins built.
+	if(EZ_BUILD_SHADERCOMPILER_DXC)
+		if (TARGET ShaderCompilerVulkan)
+			add_dependencies(${TARGET_NAME}
+				ShaderCompilerVulkan
+			)
+		endif()
+		if (TARGET ShaderCompilerOpenGL)
+			add_dependencies(${TARGET_NAME}
+				ShaderCompilerOpenGL
+			)
+		endif()
+	endif()
 endfunction()

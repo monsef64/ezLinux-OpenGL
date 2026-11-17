@@ -1,5 +1,5 @@
-#include <RendererOpenGL/RendererOpenGLPCH.h>
 #include <RendererOpenGL/Pools/QueryPoolOpenGL.h>
+#include <RendererOpenGL/RendererOpenGLPCH.h>
 
 #include <Foundation/Math/Rect.h>
 #include <Foundation/Types/ScopeExit.h>
@@ -37,9 +37,12 @@ static constexpr ezUInt32 EZ_GL_PUSH_CONSTANT_BUFFER_START_SIZE = 256;
 ezGALCommandEncoderImplOpenGL::ezGALCommandEncoderImplOpenGL(ezGALDeviceOpenGL& ref_device)
   : m_DeviceOpenGL(ref_device)
 {
+  // Static arrays are empty until EnsureCount() is called; indexing them before that is out-of-bounds.
+  m_BoundVertexBuffers.EnsureCount(EZ_GAL_MAX_VERTEX_BUFFER_COUNT);
+  m_VertexBufferOffsets.EnsureCount(EZ_GAL_MAX_VERTEX_BUFFER_COUNT);
   for (ezUInt32 i = 0; i < EZ_GAL_MAX_VERTEX_BUFFER_COUNT; i++)
   {
-    m_BoundVertexBuffers[i] = nullptr;
+    m_BoundVertexBuffers[i] = 0;
     m_VertexBufferOffsets[i] = 0;
   }
 }
@@ -124,8 +127,7 @@ void ezGALCommandEncoderImplOpenGL::ApplyBindGroup(ezUInt32 uiBindGroup, const e
     {
       case ezGALShaderResourceType::ConstantBuffer:
       {
-        const ezGALBufferOpenGL* pBuffer = bEmpty ? nullptr : static_cast<const ezGALBufferOpenGL*>(m_DeviceOpenGL.GetBuffer(item.m_Buffer.m_hBuffer));
-        m_BoundUniformBuffers.Insert(uiKey, pBuffer);
+        m_BoundUniformBuffers.Insert(uiKey, bEmpty ? ezGALBufferHandle() : item.m_Buffer.m_hBuffer);
         m_bResourceStateDirty = true;
         break;
       }
@@ -138,7 +140,7 @@ void ezGALCommandEncoderImplOpenGL::ApplyBindGroup(ezUInt32 uiBindGroup, const e
       case ezGALShaderResourceType::TexelBufferRW:
       {
         BoundBufferRange range;
-        range.m_pBuffer = bEmpty ? nullptr : static_cast<const ezGALBufferOpenGL*>(m_DeviceOpenGL.GetBuffer(item.m_Buffer.m_hBuffer));
+        range.m_hBuffer = bEmpty ? ezGALBufferHandle() : item.m_Buffer.m_hBuffer;
         range.m_uiOffset = item.m_Buffer.m_BufferRange.m_uiByteOffset;
         range.m_uiSize = item.m_Buffer.m_BufferRange.m_uiByteCount == EZ_GAL_WHOLE_SIZE ? ezUInt32(0xFFFFFFFFu) : item.m_Buffer.m_BufferRange.m_uiByteCount;
         m_BoundStorageBuffers.Insert(uiKey, range);
@@ -149,7 +151,7 @@ void ezGALCommandEncoderImplOpenGL::ApplyBindGroup(ezUInt32 uiBindGroup, const e
       case ezGALShaderResourceType::Texture:
       {
         BoundTexture bound;
-        bound.m_pTexture = bEmpty ? nullptr : static_cast<const ezGALTextureOpenGL*>(m_DeviceOpenGL.GetTexture(item.m_Texture.m_hTexture));
+        bound.m_hTexture = bEmpty ? ezGALTextureHandle() : item.m_Texture.m_hTexture;
         bound.m_Range = item.m_Texture.m_TextureRange;
         m_BoundTextures.Insert(uiKey, bound);
         m_bResourceStateDirty = true;
@@ -159,14 +161,21 @@ void ezGALCommandEncoderImplOpenGL::ApplyBindGroup(ezUInt32 uiBindGroup, const e
       case ezGALShaderResourceType::TextureRW:
       {
         BoundImage bound;
-        const ezGALTextureOpenGL* pTexture = bEmpty ? nullptr : static_cast<const ezGALTextureOpenGL*>(m_DeviceOpenGL.GetTexture(item.m_Texture.m_hTexture));
-        bound.m_pTexture = pTexture;
+        bound.m_hTexture = bEmpty ? ezGALTextureHandle() : item.m_Texture.m_hTexture;
         bound.m_uiLevel = item.m_Texture.m_TextureRange.m_uiBaseMipLevel;
         bound.m_uiLayer = item.m_Texture.m_TextureRange.m_uiBaseArraySlice;
-        if (pTexture != nullptr)
+        bound.m_bLayered = false;
+        if (!bound.m_hTexture.IsInvalidated())
         {
-          const auto& desc = pTexture->GetDescription();
-          bound.m_bLayered = desc.m_Type == ezGALTextureType::Texture2DArray || desc.m_Type == ezGALTextureType::TextureCubeArray || desc.m_Type == ezGALTextureType::Texture3D;
+          // The texture is guaranteed to be alive while its bind group is valid, so reading the description here is safe.
+          if (const ezGALTexture* pTexture = m_DeviceOpenGL.GetTexture(bound.m_hTexture))
+          {
+            if (const ezGALTextureOpenGL* pPlatformTexture = ResolvePlatformTexture(pTexture))
+            {
+              const auto& desc = pPlatformTexture->GetDescription();
+              bound.m_bLayered = desc.m_Type == ezGALTextureType::Texture2DArray || desc.m_Type == ezGALTextureType::TextureCubeArray || desc.m_Type == ezGALTextureType::Texture3D;
+            }
+          }
         }
         m_BoundImages.Insert(uiKey, bound);
         m_bResourceStateDirty = true;
@@ -175,8 +184,7 @@ void ezGALCommandEncoderImplOpenGL::ApplyBindGroup(ezUInt32 uiBindGroup, const e
 
       case ezGALShaderResourceType::Sampler:
       {
-        const ezGALSamplerStateOpenGL* pSampler = bEmpty ? nullptr : static_cast<const ezGALSamplerStateOpenGL*>(m_DeviceOpenGL.GetSamplerState(item.m_Sampler.m_hSampler));
-        m_BoundSamplers.Insert(uiKey, pSampler);
+        m_BoundSamplers.Insert(uiKey, bEmpty ? ezGALSamplerStateHandle() : item.m_Sampler.m_hSampler);
         m_bResourceStateDirty = true;
         break;
       }
@@ -184,12 +192,11 @@ void ezGALCommandEncoderImplOpenGL::ApplyBindGroup(ezUInt32 uiBindGroup, const e
       case ezGALShaderResourceType::TextureAndSampler:
       {
         BoundTexture bound;
-        bound.m_pTexture = bEmpty ? nullptr : static_cast<const ezGALTextureOpenGL*>(m_DeviceOpenGL.GetTexture(item.m_Texture.m_hTexture));
+        bound.m_hTexture = bEmpty ? ezGALTextureHandle() : item.m_Texture.m_hTexture;
         bound.m_Range = item.m_Texture.m_TextureRange;
         m_BoundTextures.Insert(uiKey, bound);
 
-        const ezGALSamplerStateOpenGL* pSampler = bEmpty ? nullptr : static_cast<const ezGALSamplerStateOpenGL*>(m_DeviceOpenGL.GetSamplerState(item.m_Texture.m_hSampler));
-        m_BoundSamplers.Insert(uiKey, pSampler);
+        m_BoundSamplers.Insert(uiKey, bEmpty ? ezGALSamplerStateHandle() : item.m_Texture.m_hSampler);
         m_bResourceStateDirty = true;
         break;
       }
@@ -224,9 +231,10 @@ void ezGALCommandEncoderImplOpenGL::SetPushConstantsPlatform(ezArrayPtr<const ez
 // ## Deferred state flush
 // #####################################
 
-static const ezGALShaderOpenGL* GetCurrentGLShader(const ezGALDeviceOpenGL& device, const ezGALGraphicsPipelineOpenGL* pGraphics, const ezGALComputePipelineOpenGL* pCompute)
+static const ezGALShaderOpenGL* GetCurrentGLShader(
+  const ezGALDeviceOpenGL& device, bool bComputePipelineSet, const ezGALComputePipelineCreationDescription& computeDesc, bool bGraphicsPipelineSet, const ezGALGraphicsPipelineCreationDescription& gfxDesc)
 {
-  const ezGALShaderHandle hShader = pCompute != nullptr ? pCompute->GetDescription().m_hShader : (pGraphics != nullptr ? pGraphics->GetDescription().m_hShader : ezGALShaderHandle());
+  const ezGALShaderHandle hShader = bComputePipelineSet ? computeDesc.m_hShader : (bGraphicsPipelineSet ? gfxDesc.m_hShader : ezGALShaderHandle());
   if (hShader.IsInvalidated())
     return nullptr;
   return static_cast<const ezGALShaderOpenGL*>(device.GetShader(hShader));
@@ -237,7 +245,7 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredResourceState()
   if (!m_bResourceStateDirty)
     return;
 
-  const ezGALShaderOpenGL* pShader = GetCurrentGLShader(m_DeviceOpenGL, m_pBoundGraphicsPipeline, m_pBoundComputePipeline);
+  const ezGALShaderOpenGL* pShader = GetCurrentGLShader(m_DeviceOpenGL, m_bComputePipelineSet, m_BoundComputePipelineDesc, m_bGraphicsPipelineSet, m_BoundGraphicsPipelineDesc);
   if (pShader == nullptr)
     return;
 
@@ -251,7 +259,8 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredResourceState()
     if (uiFlat == 0xFFFFFFFFu)
       continue;
 
-    const ezGALBufferOpenGL* pBuffer = it.Value();
+    const ezGALBufferHandle hBuffer = it.Value();
+    const ezGALBufferOpenGL* pBuffer = hBuffer.IsInvalidated() ? nullptr : static_cast<const ezGALBufferOpenGL*>(m_DeviceOpenGL.GetBuffer(hBuffer));
     glBindBufferBase(GL_UNIFORM_BUFFER, uiFlat, pBuffer != nullptr ? pBuffer->GetGLBuffer() : 0);
   }
 
@@ -266,9 +275,11 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredResourceState()
       continue;
 
     const BoundBufferRange& range = it.Value();
-    const GLuint uiBuffer = range.m_pBuffer != nullptr ? range.m_pBuffer->GetGLBuffer() : 0;
+    // The buffer may have been destroyed since the bind group was validated; handles resolve to nullptr in that case.
+    const ezGALBufferOpenGL* pBuffer = range.m_hBuffer.IsInvalidated() ? nullptr : static_cast<const ezGALBufferOpenGL*>(m_DeviceOpenGL.GetBuffer(range.m_hBuffer));
+    const GLuint uiBuffer = pBuffer != nullptr ? pBuffer->GetGLBuffer() : 0;
     const ezUInt32 uiOffset = range.m_uiOffset;
-    if (range.m_uiSize == 0xFFFFFFFFu || range.m_pBuffer == nullptr)
+    if (range.m_uiSize == 0xFFFFFFFFu || pBuffer == nullptr)
     {
       if (uiBuffer != 0 && range.m_uiSize == 0xFFFFFFFFu)
       {
@@ -276,7 +287,7 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredResourceState()
         if (uiOffset == 0)
           glBindBufferBase(GL_SHADER_STORAGE_BUFFER, uiFlat, uiBuffer);
         else
-          glBindBufferRange(GL_SHADER_STORAGE_BUFFER, uiFlat, uiBuffer, uiOffset, range.m_pBuffer->GetSize() - uiOffset);
+          glBindBufferRange(GL_SHADER_STORAGE_BUFFER, uiFlat, uiBuffer, uiOffset, pBuffer->GetSize() - uiOffset);
       }
       else
       {
@@ -300,13 +311,15 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredResourceState()
       continue;
 
     const BoundImage& image = it.Value();
-    if (image.m_pTexture == nullptr)
+    const ezGALTexture* pTextureBase = image.m_hTexture.IsInvalidated() ? nullptr : m_DeviceOpenGL.GetTexture(image.m_hTexture);
+    const ezGALTextureOpenGL* pTexture = pTextureBase != nullptr ? ResolvePlatformTexture(pTextureBase) : nullptr;
+    if (pTexture == nullptr)
     {
       glBindImageTexture(uiFlat, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
       continue;
     }
 
-    const ezGALTextureCreationDescription& desc = image.m_pTexture->GetDescription();
+    const ezGALTextureCreationDescription& desc = pTexture->GetDescription();
     GLenum eFormat = ezMappingTables::GetImageFormat(desc.m_Format);
     if (eFormat == 0)
     {
@@ -315,7 +328,7 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredResourceState()
     }
 
     const GLuint uiLayered = image.m_bLayered ? GL_TRUE : GL_FALSE;
-    glBindImageTexture(uiFlat, image.m_pTexture->GetGLTexture(), static_cast<GLint>(image.m_uiLevel), static_cast<GLboolean>(uiLayered), static_cast<GLint>(image.m_uiLayer), GL_READ_WRITE, eFormat);
+    glBindImageTexture(uiFlat, pTexture->GetGLTexture(), static_cast<GLint>(image.m_uiLevel), static_cast<GLboolean>(uiLayered), static_cast<GLint>(image.m_uiLayer), GL_READ_WRITE, eFormat);
   }
 
   // Sampled textures
@@ -330,22 +343,24 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredResourceState()
 
     const BoundTexture& bound = it.Value();
     glActiveTexture(GL_TEXTURE0 + uiFlat);
-    if (bound.m_pTexture == nullptr)
+    const ezGALTexture* pTextureBase = bound.m_hTexture.IsInvalidated() ? nullptr : m_DeviceOpenGL.GetTexture(bound.m_hTexture);
+    const ezGALTextureOpenGL* pTexture = pTextureBase != nullptr ? ResolvePlatformTexture(pTextureBase) : nullptr;
+    if (pTexture == nullptr)
     {
       glBindTexture(GL_TEXTURE_2D, 0);
       continue;
     }
 
-    glBindTexture(bound.m_pTexture->GetTarget(), bound.m_pTexture->GetGLTexture());
+    glBindTexture(pTexture->GetTarget(), pTexture->GetGLTexture());
 
     // Restrict the mip range to the bound view. Only needed for partial mip ranges.
     const ezUInt8 uiBaseMip = bound.m_Range.m_uiBaseMipLevel;
     const ezUInt8 uiMipLevels = bound.m_Range.m_uiMipLevels;
     if (uiBaseMip != 0 || uiMipLevels != EZ_GAL_ALL_MIP_LEVELS)
     {
-      const ezUInt32 uiLastMip = uiBaseMip + (uiMipLevels == EZ_GAL_ALL_MIP_LEVELS ? bound.m_pTexture->GetDescription().m_uiMipLevelCount : uiMipLevels) - 1;
-      glTexParameteri(bound.m_pTexture->GetTarget(), GL_TEXTURE_BASE_LEVEL, uiBaseMip);
-      glTexParameteri(bound.m_pTexture->GetTarget(), GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(uiLastMip));
+      const ezUInt32 uiLastMip = uiBaseMip + (uiMipLevels == EZ_GAL_ALL_MIP_LEVELS ? pTexture->GetDescription().m_uiMipLevelCount : uiMipLevels) - 1;
+      glTexParameteri(pTexture->GetTarget(), GL_TEXTURE_BASE_LEVEL, uiBaseMip);
+      glTexParameteri(pTexture->GetTarget(), GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(uiLastMip));
     }
   }
 
@@ -359,7 +374,8 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredResourceState()
     if (uiFlat == 0xFFFFFFFFu)
       continue;
 
-    const ezGALSamplerStateOpenGL* pSampler = it.Value();
+    const ezGALSamplerStateHandle hSampler = it.Value();
+    const ezGALSamplerStateOpenGL* pSampler = hSampler.IsInvalidated() ? nullptr : static_cast<const ezGALSamplerStateOpenGL*>(m_DeviceOpenGL.GetSamplerState(hSampler));
     glBindSampler(uiFlat, pSampler != nullptr ? pSampler->GetSampler() : 0);
   }
 
@@ -466,7 +482,7 @@ void ezGALCommandEncoderImplOpenGL::CopyTexturePlatform(const ezGALTexture* pDes
 
   const auto& srcDesc = pSrc->GetDescription();
   const ezUInt32 uiMipLevels = srcDesc.m_uiMipLevelCount;
-  const ezUInt32 uiSliceCount = srcDesc.m_Type == ezGALTextureType::TextureCube ? srcDesc.m_uiArraySize * 6 : srcDesc.m_uiArraySize;
+  const ezUInt32 uiSliceCount = srcDesc.m_Type == ezGALTextureType::TextureCube || srcDesc.m_Type == ezGALTextureType::TextureCubeArray ? srcDesc.m_uiArraySize * 6 : srcDesc.m_uiArraySize;
 
   for (ezUInt32 uiMip = 0; uiMip < uiMipLevels; ++uiMip)
   {
@@ -605,7 +621,7 @@ void ezGALCommandEncoderImplOpenGL::ReadbackTexturePlatform(const ezGALReadbackT
 
   // Readback textures were created with the same description as the source texture (full mip chain).
   const ezUInt32 uiMipLevels = srcDesc.m_uiMipLevelCount;
-  const ezUInt32 uiSliceCount = srcDesc.m_Type == ezGALTextureType::TextureCube ? srcDesc.m_uiArraySize * 6 : (srcDesc.m_Type == ezGALTextureType::Texture2DArray || srcDesc.m_Type == ezGALTextureType::TextureCubeArray || srcDesc.m_Type == ezGALTextureType::Texture2DProxy ? srcDesc.m_uiArraySize : 1);
+  const ezUInt32 uiSliceCount = srcDesc.m_Type == ezGALTextureType::TextureCube || srcDesc.m_Type == ezGALTextureType::TextureCubeArray ? srcDesc.m_uiArraySize * 6 : (srcDesc.m_Type == ezGALTextureType::Texture2DArray || srcDesc.m_Type == ezGALTextureType::Texture2DProxy ? srcDesc.m_uiArraySize : 1);
 
   for (ezUInt32 uiMip = 0; uiMip < uiMipLevels; ++uiMip)
   {
@@ -775,12 +791,18 @@ void ezGALCommandEncoderImplOpenGL::SetStencilReferencePlatform(ezUInt8 uiStenci
 
 void ezGALCommandEncoderImplOpenGL::SetIndexBufferPlatform(const ezGALBuffer* pIndexBuffer)
 {
-  m_pBoundIndexBuffer = static_cast<const ezGALBufferOpenGL*>(pIndexBuffer);
+  const ezGALBufferOpenGL* pGLBuffer = static_cast<const ezGALBufferOpenGL*>(pIndexBuffer);
+
+  m_bIndexBufferBound = pGLBuffer != nullptr;
+  if (pGLBuffer != nullptr)
+  {
+    m_BoundIndexType = pGLBuffer->GetIndexFormat();
+  }
 
   // The element array buffer binding is part of the VAO state.
   InitializeVAO();
   glBindVertexArray(m_uiVAO);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_pBoundIndexBuffer != nullptr ? m_pBoundIndexBuffer->GetGLBuffer() : 0);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pGLBuffer != nullptr ? pGLBuffer->GetGLBuffer() : 0);
 }
 
 void ezGALCommandEncoderImplOpenGL::SetVertexBufferPlatform(ezUInt32 uiSlot, const ezGALBuffer* pVertexBuffer, ezUInt32 uiOffset)
@@ -791,7 +813,8 @@ void ezGALCommandEncoderImplOpenGL::SetVertexBufferPlatform(ezUInt32 uiSlot, con
     return;
   }
 
-  m_BoundVertexBuffers[uiSlot] = static_cast<const ezGALBufferOpenGL*>(pVertexBuffer);
+  const ezGALBufferOpenGL* pGLBuffer = static_cast<const ezGALBufferOpenGL*>(pVertexBuffer);
+  m_BoundVertexBuffers[uiSlot] = pGLBuffer != nullptr ? pGLBuffer->GetGLBuffer() : 0;
   m_VertexBufferOffsets[uiSlot] = uiOffset;
   m_bVertexStateDirty = true;
 }
@@ -799,12 +822,13 @@ void ezGALCommandEncoderImplOpenGL::SetVertexBufferPlatform(ezUInt32 uiSlot, con
 void ezGALCommandEncoderImplOpenGL::SetGraphicsPipelinePlatform(const ezGALGraphicsPipeline* pGraphicsPipeline)
 {
   const ezGALGraphicsPipelineOpenGL* pGLPipeline = static_cast<const ezGALGraphicsPipelineOpenGL*>(pGraphicsPipeline);
-  m_pBoundGraphicsPipeline = pGLPipeline;
-  m_pBoundComputePipeline = nullptr;
+  m_bGraphicsPipelineSet = pGLPipeline != nullptr;
+  m_BoundGraphicsPipelineDesc = pGLPipeline != nullptr ? pGLPipeline->GetDescription() : ezGALGraphicsPipelineCreationDescription();
+  m_bComputePipelineSet = false;
 
   const ezGALShaderOpenGL* pShader = pGLPipeline != nullptr
-    ? static_cast<const ezGALShaderOpenGL*>(m_DeviceOpenGL.GetShader(pGLPipeline->GetDescription().m_hShader))
-    : nullptr;
+                                       ? static_cast<const ezGALShaderOpenGL*>(m_DeviceOpenGL.GetShader(pGLPipeline->GetDescription().m_hShader))
+                                       : nullptr;
   glUseProgram(pShader != nullptr ? pShader->GetProgram() : 0);
 
   m_bPipelineStateDirty = true;
@@ -814,12 +838,13 @@ void ezGALCommandEncoderImplOpenGL::SetGraphicsPipelinePlatform(const ezGALGraph
 void ezGALCommandEncoderImplOpenGL::SetComputePipelinePlatform(const ezGALComputePipeline* pComputePipeline)
 {
   const ezGALComputePipelineOpenGL* pGLPipeline = static_cast<const ezGALComputePipelineOpenGL*>(pComputePipeline);
-  m_pBoundComputePipeline = pGLPipeline;
-  m_pBoundGraphicsPipeline = nullptr;
+  m_bComputePipelineSet = pGLPipeline != nullptr;
+  m_BoundComputePipelineDesc = pGLPipeline != nullptr ? pGLPipeline->GetDescription() : ezGALComputePipelineCreationDescription();
+  m_bGraphicsPipelineSet = false;
 
   const ezGALShaderOpenGL* pShader = pGLPipeline != nullptr
-    ? static_cast<const ezGALShaderOpenGL*>(m_DeviceOpenGL.GetShader(pGLPipeline->GetDescription().m_hShader))
-    : nullptr;
+                                       ? static_cast<const ezGALShaderOpenGL*>(m_DeviceOpenGL.GetShader(pGLPipeline->GetDescription().m_hShader))
+                                       : nullptr;
   glUseProgram(pShader != nullptr ? pShader->GetProgram() : 0);
 
   m_bResourceStateDirty = true;
@@ -827,14 +852,16 @@ void ezGALCommandEncoderImplOpenGL::SetComputePipelinePlatform(const ezGALComput
 
 void ezGALCommandEncoderImplOpenGL::ApplyStencilReference()
 {
-  if (m_pBoundGraphicsPipeline == nullptr)
+  if (!m_bGraphicsPipelineSet)
     return;
 
-  const ezGALDepthStencilStateHandle hState = m_pBoundGraphicsPipeline->GetDescription().m_hDepthStencilState;
+  const ezGALDepthStencilStateHandle hState = m_BoundGraphicsPipelineDesc.m_hDepthStencilState;
   if (hState.IsInvalidated())
     return;
 
   const auto* pState = static_cast<const ezGALDepthStencilStateOpenGL*>(m_DeviceOpenGL.GetDepthStencilState(hState));
+  if (pState == nullptr)
+    return;
   const auto& desc = pState->GetDescription();
 
   glStencilFuncSeparate(GL_FRONT, ezMappingTables::ToGLCompareFunc(desc.m_FrontFaceStencilOp.m_StencilFunc), m_uiStencilRef, desc.m_uiStencilReadMask);
@@ -968,11 +995,10 @@ void ezGALCommandEncoderImplOpenGL::ApplyVertexState()
   }
   m_EnabledAttributeLocations.Clear();
 
-  const ezGALGraphicsPipelineOpenGL* pPipeline = m_pBoundGraphicsPipeline;
   const ezGALVertexDeclarationOpenGL* pDeclaration = nullptr;
-  if (pPipeline != nullptr && !pPipeline->GetDescription().m_hVertexDeclaration.IsInvalidated())
+  if (m_bGraphicsPipelineSet && !m_BoundGraphicsPipelineDesc.m_hVertexDeclaration.IsInvalidated())
   {
-    pDeclaration = static_cast<const ezGALVertexDeclarationOpenGL*>(m_DeviceOpenGL.GetVertexDeclaration(pPipeline->GetDescription().m_hVertexDeclaration));
+    pDeclaration = static_cast<const ezGALVertexDeclarationOpenGL*>(m_DeviceOpenGL.GetVertexDeclaration(m_BoundGraphicsPipelineDesc.m_hVertexDeclaration));
   }
 
   if (pDeclaration != nullptr)
@@ -984,9 +1010,7 @@ void ezGALCommandEncoderImplOpenGL::ApplyVertexState()
     const ezUInt32 uiSlotCount = ezMath::Min<ezUInt32>(static_cast<ezUInt32>(m_BoundVertexBuffers.GetCount()), strides.GetCount());
     for (ezUInt32 uiSlot = 0; uiSlot < uiSlotCount; uiSlot++)
     {
-      const ezGALBufferOpenGL* pBuffer = m_BoundVertexBuffers[uiSlot];
-      const GLuint uiBuffer = pBuffer != nullptr ? pBuffer->GetGLBuffer() : 0;
-      glVertexArrayVertexBuffer(m_uiVAO, uiSlot, uiBuffer, m_VertexBufferOffsets[uiSlot], strides[uiSlot]);
+      glVertexArrayVertexBuffer(m_uiVAO, uiSlot, m_BoundVertexBuffers[uiSlot], m_VertexBufferOffsets[uiSlot], strides[uiSlot]);
     }
 
     // Setup attributes
@@ -1016,29 +1040,38 @@ void ezGALCommandEncoderImplOpenGL::ApplyVertexState()
 
 void ezGALCommandEncoderImplOpenGL::FlushDeferredPipelineState()
 {
-  if (m_pBoundGraphicsPipeline == nullptr)
+  if (!m_bGraphicsPipelineSet)
     return;
 
-  const ezGALGraphicsPipelineCreationDescription& pipelineDesc = m_pBoundGraphicsPipeline->GetDescription();
+  const ezGALGraphicsPipelineCreationDescription& pipelineDesc = m_BoundGraphicsPipelineDesc;
 
   if (m_bPipelineStateDirty)
   {
     if (!pipelineDesc.m_hBlendState.IsInvalidated())
     {
       const auto* pState = static_cast<const ezGALBlendStateOpenGL*>(m_DeviceOpenGL.GetBlendState(pipelineDesc.m_hBlendState));
-      ApplyBlendState(pState->GetDescription(), m_uiColorTargetCount);
+      if (pState != nullptr)
+      {
+        ApplyBlendState(pState->GetDescription(), m_uiColorTargetCount);
+      }
     }
 
     if (!pipelineDesc.m_hDepthStencilState.IsInvalidated())
     {
       const auto* pState = static_cast<const ezGALDepthStencilStateOpenGL*>(m_DeviceOpenGL.GetDepthStencilState(pipelineDesc.m_hDepthStencilState));
-      ApplyDepthStencilState(pState->GetDescription());
+      if (pState != nullptr)
+      {
+        ApplyDepthStencilState(pState->GetDescription());
+      }
     }
 
     if (!pipelineDesc.m_hRasterizerState.IsInvalidated())
     {
       const auto* pState = static_cast<const ezGALRasterizerStateOpenGL*>(m_DeviceOpenGL.GetRasterizerState(pipelineDesc.m_hRasterizerState));
-      ApplyRasterizerState(pState->GetDescription());
+      if (pState != nullptr)
+      {
+        ApplyRasterizerState(pState->GetDescription());
+      }
     }
 
     m_bPipelineStateDirty = false;
@@ -1052,7 +1085,10 @@ void ezGALCommandEncoderImplOpenGL::FlushDeferredPipelineState()
   ApplyViewportAndScissor();
 }
 
-constexpr GLenum ToGLDrawBuffers(ezUInt32 i) { return GL_COLOR_ATTACHMENT0 + i; }
+constexpr GLenum ToGLDrawBuffers(ezUInt32 i)
+{
+  return GL_COLOR_ATTACHMENT0 + i;
+}
 
 void ezGALCommandEncoderImplOpenGL::SetDrawBuffersMask(ezUInt32 uiMask)
 {
@@ -1075,10 +1111,10 @@ void ezGALCommandEncoderImplOpenGL::SetDrawBuffersMask(ezUInt32 uiMask)
 
 GLenum ezGALCommandEncoderImplOpenGL::GetPrimitiveMode() const
 {
-  if (m_pBoundGraphicsPipeline == nullptr)
+  if (!m_bGraphicsPipelineSet)
     return GL_TRIANGLES;
 
-  return ezMappingTables::ToGLPrimitiveTopology(m_pBoundGraphicsPipeline->GetDescription().m_Topology);
+  return ezMappingTables::ToGLPrimitiveTopology(m_BoundGraphicsPipelineDesc.m_Topology);
 }
 
 // #####################################
@@ -1334,8 +1370,10 @@ void ezGALCommandEncoderImplOpenGL::BeginRenderingPlatform(const ezGALRenderingS
     glClearStencil(renderingSetup.GetClearStencil());
 
     GLbitfield eBits = 0;
-    if (bClearDepth) eBits |= GL_DEPTH_BUFFER_BIT;
-    if (bClearStencil) eBits |= GL_STENCIL_BUFFER_BIT;
+    if (bClearDepth)
+      eBits |= GL_DEPTH_BUFFER_BIT;
+    if (bClearStencil)
+      eBits |= GL_STENCIL_BUFFER_BIT;
     glClear(eBits);
 
     // Re-apply depth / stencil masks from the depth-stencil state.
@@ -1388,7 +1426,8 @@ void ezGALCommandEncoderImplOpenGL::ClearPlatform(const ezColor& clearColor, ezU
 {
   if (uiRenderTargetClearMask != 0 && m_uiColorTargetCount > 0)
   {
-    const GLint iPrevDrawFBO = []() -> GLint {
+    const GLint iPrevDrawFBO = []() -> GLint
+    {
       GLint i = 0;
       glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &i);
       return i;
@@ -1441,8 +1480,10 @@ void ezGALCommandEncoderImplOpenGL::ClearPlatform(const ezColor& clearColor, ezU
     glClearStencil(uiStencilClear);
 
     GLbitfield eBits = 0;
-    if (bClearDepth) eBits |= GL_DEPTH_BUFFER_BIT;
-    if (bClearStencil) eBits |= GL_STENCIL_BUFFER_BIT;
+    if (bClearDepth)
+      eBits |= GL_DEPTH_BUFFER_BIT;
+    if (bClearStencil)
+      eBits |= GL_STENCIL_BUFFER_BIT;
     glClear(eBits);
 
     m_bPipelineStateDirty = true; // restore depth/stencil masks
@@ -1464,13 +1505,13 @@ ezResult ezGALCommandEncoderImplOpenGL::DrawIndexedPlatform(ezUInt32 uiIndexCoun
 {
   FlushBeforeRasterDraw();
 
-  if (m_pBoundIndexBuffer == nullptr)
+  if (!m_bIndexBufferBound)
   {
     ezLog::Error("DrawIndexed called without a bound index buffer.");
     return EZ_FAILURE;
   }
 
-  const ezGALIndexType::Enum eIndexType = m_pBoundIndexBuffer->GetIndexFormat();
+  const ezGALIndexType::Enum eIndexType = m_BoundIndexType;
   const GLenum eGLIndexType = eIndexType == ezGALIndexType::UShort ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
   const ezUInt32 uiIndexSize = ezGALIndexType::GetSize(eIndexType);
 
@@ -1483,13 +1524,13 @@ ezResult ezGALCommandEncoderImplOpenGL::DrawIndexedInstancedPlatform(ezUInt32 ui
 {
   FlushBeforeRasterDraw();
 
-  if (m_pBoundIndexBuffer == nullptr)
+  if (!m_bIndexBufferBound)
   {
     ezLog::Error("DrawIndexedInstanced called without a bound index buffer.");
     return EZ_FAILURE;
   }
 
-  const ezGALIndexType::Enum eIndexType = m_pBoundIndexBuffer->GetIndexFormat();
+  const ezGALIndexType::Enum eIndexType = m_BoundIndexType;
   const GLenum eGLIndexType = eIndexType == ezGALIndexType::UShort ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
   const ezUInt32 uiIndexSize = ezGALIndexType::GetSize(eIndexType);
 
@@ -1502,14 +1543,14 @@ ezResult ezGALCommandEncoderImplOpenGL::DrawIndexedInstancedIndirectPlatform(con
 {
   FlushBeforeRasterDraw();
 
-  if (m_pBoundIndexBuffer == nullptr)
+  if (!m_bIndexBufferBound)
   {
     ezLog::Error("DrawIndexedInstancedIndirect called without a bound index buffer.");
     return EZ_FAILURE;
   }
 
   const auto* pIndirect = static_cast<const ezGALBufferOpenGL*>(pIndirectArgumentBuffer);
-  const ezGALIndexType::Enum eIndexType = m_pBoundIndexBuffer->GetIndexFormat();
+  const ezGALIndexType::Enum eIndexType = m_BoundIndexType;
   const GLenum eGLIndexType = eIndexType == ezGALIndexType::UShort ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
 
   glBindBuffer(GL_DRAW_INDIRECT_BUFFER, pIndirect->GetGLBuffer());
