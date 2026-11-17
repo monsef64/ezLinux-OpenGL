@@ -49,11 +49,21 @@ void ezQueryPoolOpenGL::EndFrame()
 
 ezUInt32 ezQueryPoolOpenGL::AllocateQuery()
 {
-  if (!m_FreeQueries.IsEmpty())
+  while (!m_FreeQueries.IsEmpty())
   {
     const ezUInt32 uiIndex = m_FreeQueries.PeekFront();
     m_FreeQueries.PopFront();
-    return uiIndex;
+    QueryEntry& entry = m_Queries[uiIndex];
+    if (entry.m_uiQuery == 0)
+    {
+      // Recycled entries had their GL object deleted (GL query objects are typed by first use,
+      // so an object that was used for a timestamp must not be reused for an occlusion query).
+      GLuint uiQuery = 0;
+      glGenQueries(1, &uiQuery);
+      entry.m_uiQuery = uiQuery;
+    }
+    if (entry.m_uiQuery != 0)
+      return uiIndex;
   }
 
   GLuint uiQuery = 0;
@@ -67,6 +77,10 @@ ezUInt32 ezQueryPoolOpenGL::AllocateQuery()
   entry.m_uiQuery = uiQuery;
   entry.m_uiGeneration = 1;
   entry.m_bFree = false;
+  entry.m_bInFlight = false;
+  entry.m_eType = 0;
+  entry.m_uiFrame = m_uiFrameCounter;
+  entry.m_bIsTimestamp = false;
   m_Queries.PushBack(entry);
   return m_Queries.GetCount() - 1;
 }
@@ -74,6 +88,15 @@ ezUInt32 ezQueryPoolOpenGL::AllocateQuery()
 void ezQueryPoolOpenGL::RecycleQuery(ezUInt32 uiIndex)
 {
   QueryEntry& entry = m_Queries[uiIndex];
+  // GL query objects are permanently typed by their first use (occlusion vs GL_TIMESTAMP).
+  // Reusing the same object for a different type makes glBeginQuery / glQueryCounter fail
+  // with GL_INVALID_OPERATION, which silently leaves the stale result of the previous use.
+  // Delete the object so the next allocation starts with a fresh, untyped one.
+  if (entry.m_uiQuery != 0)
+  {
+    glDeleteQueries(1, &entry.m_uiQuery);
+    entry.m_uiQuery = 0;
+  }
   entry.m_bFree = true;
   entry.m_bInFlight = false;
   entry.m_eType = 0;

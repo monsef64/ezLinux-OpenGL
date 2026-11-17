@@ -482,7 +482,7 @@ void ezGALCommandEncoderImplOpenGL::CopyTexturePlatform(const ezGALTexture* pDes
 
   const auto& srcDesc = pSrc->GetDescription();
   const ezUInt32 uiMipLevels = srcDesc.m_uiMipLevelCount;
-  const ezUInt32 uiSliceCount = srcDesc.m_Type == ezGALTextureType::TextureCube ? srcDesc.m_uiArraySize * 6 : srcDesc.m_uiArraySize;
+  const ezUInt32 uiSliceCount = srcDesc.m_Type == ezGALTextureType::TextureCube || srcDesc.m_Type == ezGALTextureType::TextureCubeArray ? srcDesc.m_uiArraySize * 6 : srcDesc.m_uiArraySize;
 
   for (ezUInt32 uiMip = 0; uiMip < uiMipLevels; ++uiMip)
   {
@@ -621,7 +621,7 @@ void ezGALCommandEncoderImplOpenGL::ReadbackTexturePlatform(const ezGALReadbackT
 
   // Readback textures were created with the same description as the source texture (full mip chain).
   const ezUInt32 uiMipLevels = srcDesc.m_uiMipLevelCount;
-  const ezUInt32 uiSliceCount = srcDesc.m_Type == ezGALTextureType::TextureCube ? srcDesc.m_uiArraySize * 6 : (srcDesc.m_Type == ezGALTextureType::Texture2DArray || srcDesc.m_Type == ezGALTextureType::TextureCubeArray || srcDesc.m_Type == ezGALTextureType::Texture2DProxy ? srcDesc.m_uiArraySize : 1);
+  const ezUInt32 uiSliceCount = srcDesc.m_Type == ezGALTextureType::TextureCube || srcDesc.m_Type == ezGALTextureType::TextureCubeArray ? srcDesc.m_uiArraySize * 6 : (srcDesc.m_Type == ezGALTextureType::Texture2DArray || srcDesc.m_Type == ezGALTextureType::Texture2DProxy ? srcDesc.m_uiArraySize : 1);
 
   for (ezUInt32 uiMip = 0; uiMip < uiMipLevels; ++uiMip)
   {
