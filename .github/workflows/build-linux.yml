@@ -238,72 +238,72 @@ jobs:
           sys.stdout.flush()
           try:
            glGetString = glfun('glGetString', ctypes.c_char_p, ctypes.c_uint)
-          glGetIntegerv = glfun('glGetIntegerv', None, ctypes.c_uint, ctypes.c_void_p)
-          glGetError = glfun('glGetError', ctypes.c_uint)
-          glIsEnabled = glfun('glIsEnabled', ctypes.c_ubyte, ctypes.c_uint)
-          glEnable = glfun('glEnable', None, ctypes.c_uint)
-          glDisable = glfun('glDisable', None, ctypes.c_uint)
-          glCreateTextures = glfun('glCreateTextures', None, ctypes.c_uint, ctypes.c_int, ctypes.POINTER(ctypes.c_uint))
-          glTextureStorage2D = glfun('glTextureStorage2D', None, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_int, ctypes.c_int)
-          glCreateFramebuffers = glfun('glCreateFramebuffers', None, ctypes.c_int, ctypes.POINTER(ctypes.c_uint))
-          glNamedFramebufferTexture = glfun('glNamedFramebufferTexture', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_int)
-          glNamedFramebufferDrawBuffer = glfun('glNamedFramebufferDrawBuffer', None, ctypes.c_uint, ctypes.c_uint)
-          glCheckNamedFramebufferStatus = glfun('glCheckNamedFramebufferStatus', ctypes.c_uint, ctypes.c_uint, ctypes.c_uint)
-          glNamedFramebufferClearBufferfv = glfun('glNamedFramebufferClearBufferfv', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_float_p)
-          glGetTextureSubImage = glfun('glGetTextureSubImage', None, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_size_t, ctypes.c_void_p)
-          glCopyImageSubData = glfun('glCopyImageSubData', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int)
-          glGetNamedFramebufferAttachmentParameteriv = glfun('glGetNamedFramebufferAttachmentParameteriv', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.POINTER(ctypes.c_int))
-          GL_VERSION = 0x1F02
-          GL_FRAMEBUFFER_SRGB = 0x8DB9
-          GL_TEXTURE_2D = 0x0DE1
-          GL_READ_FRAMEBUFFER = 0x8CA8
-          GL_DRAW_FRAMEBUFFER = 0x8CA9
-          GL_COLOR_ATTACHMENT0 = 0x8CE0
-          GL_FRAMEBUFFER_COMPLETE = 0x8CD5
-          GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING = 0x8210
-          GL_SRGB = 0x8C40
-          GL_SRGB8_ALPHA8 = 0x8E47
-          GL_RGBA8 = 0x8058
-          GL_RGBA = 0x1908
-          GL_UNSIGNED_BYTE = 0x1401
-          GL_COLOR = 0x1800
-          print('::notice::PROBE GL_VERSION =', glGetString(GL_VERSION).decode())
-          print('::notice::PROBE FRAMEBUFFER_SRGB default: glIsEnabled =', glIsEnabled(GL_FRAMEBUFFER_SRGB))
-          fbi = ctypes.c_int32()
-          glGetIntegerv(GL_FRAMEBUFFER_SRGB, ctypes.byref(fbi))
-          print('::notice::PROBE FRAMEBUFFER_SRGB default: glGetIntegerv =', fbi.value)
-          def make_tex_dsa(fmt):
-              t = ctypes.c_uint(0)
-              glCreateTextures(GL_TEXTURE_2D, 1, ctypes.byref(t))
-              glTextureStorage2D(t, 1, fmt, 8, 8)
-              return t.value
-          def probe(label, srgb_enable):
-              if srgb_enable: glEnable(GL_FRAMEBUFFER_SRGB)
-              else: glDisable(GL_FRAMEBUFFER_SRGB)
-              state = ctypes.c_int32(); glGetIntegerv(GL_FRAMEBUFFER_SRGB, ctypes.byref(state))
-              tex = make_tex_dsa(GL_SRGB8_ALPHA8)
-              fbo = ctypes.c_uint(0)
-              glCreateFramebuffers(1, ctypes.byref(fbo))
-              glNamedFramebufferTexture(fbo, GL_COLOR_ATTACHMENT0, tex, 0)
-              glNamedFramebufferDrawBuffer(fbo, GL_COLOR_ATTACHMENT0)
-              status = glCheckNamedFramebufferStatus(fbo, GL_DRAW_FRAMEBUFFER)
-              enc = ctypes.c_int32()
-              glGetNamedFramebufferAttachmentParameteriv(fbo, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING, ctypes.byref(enc))
-              col = (ctypes.c_float * 4)(0.5, 0.5, 0.5, 1.0)
-              err_before = glGetError()
-              glNamedFramebufferClearBufferfv(fbo, GL_COLOR, 0, col)
-              err_clear = glGetError()
-              err_check = glGetError()
-              buf = (ctypes.c_ubyte * (8*8*4))()
-              glGetTextureSubImage(tex, 0, 0, 0, 0, 8, 8, 1, GL_RGBA, GL_UNSIGNED_BYTE, ctypes.sizeof(buf), buf)
-              err_get = glGetError()
-              raw_copy = make_tex_dsa(GL_RGBA8)
-              glCopyImageSubData(tex, GL_TEXTURE_2D, 0, 0, 0, 0, raw_copy, GL_TEXTURE_2D, 0, 0, 0, 0, 8, 8, 1)
-              err_copy = glGetError()
-              buf2 = (ctypes.c_ubyte * (8*8*4))()
-              glGetTextureSubImage(raw_copy, 0, 0, 0, 0, 8, 8, 1, GL_RGBA, GL_UNSIGNED_BYTE, ctypes.sizeof(buf2), buf2)
-              err_get2 = glGetError()
-              print('::notice::PROBE %s FRAMEBUFFER_SRGB=%d fbo_complete=0x%x(encoding 0x%x) errs(%x,%x,%x,%x,%x) srgb_direct=%s raw_copy=%s' % (label, state.value, status, enc.value, err_before, err_clear, err_check, err_get, err_copy, str(list(buf[:4])), str(list(buf2[:4]))))
+           glGetIntegerv = glfun('glGetIntegerv', None, ctypes.c_uint, ctypes.c_void_p)
+           glGetError = glfun('glGetError', ctypes.c_uint)
+           glIsEnabled = glfun('glIsEnabled', ctypes.c_ubyte, ctypes.c_uint)
+           glEnable = glfun('glEnable', None, ctypes.c_uint)
+           glDisable = glfun('glDisable', None, ctypes.c_uint)
+           glCreateTextures = glfun('glCreateTextures', None, ctypes.c_uint, ctypes.c_int, ctypes.POINTER(ctypes.c_uint))
+           glTextureStorage2D = glfun('glTextureStorage2D', None, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_int, ctypes.c_int)
+           glCreateFramebuffers = glfun('glCreateFramebuffers', None, ctypes.c_int, ctypes.POINTER(ctypes.c_uint))
+           glNamedFramebufferTexture = glfun('glNamedFramebufferTexture', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_int)
+           glNamedFramebufferDrawBuffer = glfun('glNamedFramebufferDrawBuffer', None, ctypes.c_uint, ctypes.c_uint)
+           glCheckNamedFramebufferStatus = glfun('glCheckNamedFramebufferStatus', ctypes.c_uint, ctypes.c_uint, ctypes.c_uint)
+           glNamedFramebufferClearBufferfv = glfun('glNamedFramebufferClearBufferfv', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_float_p)
+           glGetTextureSubImage = glfun('glGetTextureSubImage', None, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_size_t, ctypes.c_void_p)
+           glCopyImageSubData = glfun('glCopyImageSubData', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int)
+           glGetNamedFramebufferAttachmentParameteriv = glfun('glGetNamedFramebufferAttachmentParameteriv', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.POINTER(ctypes.c_int))
+           GL_VERSION = 0x1F02
+           GL_FRAMEBUFFER_SRGB = 0x8DB9
+           GL_TEXTURE_2D = 0x0DE1
+           GL_READ_FRAMEBUFFER = 0x8CA8
+           GL_DRAW_FRAMEBUFFER = 0x8CA9
+           GL_COLOR_ATTACHMENT0 = 0x8CE0
+           GL_FRAMEBUFFER_COMPLETE = 0x8CD5
+           GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING = 0x8210
+           GL_SRGB = 0x8C40
+           GL_SRGB8_ALPHA8 = 0x8E47
+           GL_RGBA8 = 0x8058
+           GL_RGBA = 0x1908
+           GL_UNSIGNED_BYTE = 0x1401
+           GL_COLOR = 0x1800
+           print('::notice::PROBE GL_VERSION =', glGetString(GL_VERSION).decode())
+           print('::notice::PROBE FRAMEBUFFER_SRGB default: glIsEnabled =', glIsEnabled(GL_FRAMEBUFFER_SRGB))
+           fbi = ctypes.c_int32()
+           glGetIntegerv(GL_FRAMEBUFFER_SRGB, ctypes.byref(fbi))
+           print('::notice::PROBE FRAMEBUFFER_SRGB default: glGetIntegerv =', fbi.value)
+           def make_tex_dsa(fmt):
+               t = ctypes.c_uint(0)
+               glCreateTextures(GL_TEXTURE_2D, 1, ctypes.byref(t))
+               glTextureStorage2D(t, 1, fmt, 8, 8)
+               return t.value
+           def probe(label, srgb_enable):
+               if srgb_enable: glEnable(GL_FRAMEBUFFER_SRGB)
+               else: glDisable(GL_FRAMEBUFFER_SRGB)
+               state = ctypes.c_int32(); glGetIntegerv(GL_FRAMEBUFFER_SRGB, ctypes.byref(state))
+               tex = make_tex_dsa(GL_SRGB8_ALPHA8)
+               fbo = ctypes.c_uint(0)
+               glCreateFramebuffers(1, ctypes.byref(fbo))
+               glNamedFramebufferTexture(fbo, GL_COLOR_ATTACHMENT0, tex, 0)
+               glNamedFramebufferDrawBuffer(fbo, GL_COLOR_ATTACHMENT0)
+               status = glCheckNamedFramebufferStatus(fbo, GL_DRAW_FRAMEBUFFER)
+               enc = ctypes.c_int32()
+               glGetNamedFramebufferAttachmentParameteriv(fbo, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING, ctypes.byref(enc))
+               col = (ctypes.c_float * 4)(0.5, 0.5, 0.5, 1.0)
+               err_before = glGetError()
+               glNamedFramebufferClearBufferfv(fbo, GL_COLOR, 0, col)
+               err_clear = glGetError()
+               err_check = glGetError()
+               buf = (ctypes.c_ubyte * (8*8*4))()
+               glGetTextureSubImage(tex, 0, 0, 0, 0, 8, 8, 1, GL_RGBA, GL_UNSIGNED_BYTE, ctypes.sizeof(buf), buf)
+               err_get = glGetError()
+               raw_copy = make_tex_dsa(GL_RGBA8)
+               glCopyImageSubData(tex, GL_TEXTURE_2D, 0, 0, 0, 0, raw_copy, GL_TEXTURE_2D, 0, 0, 0, 0, 8, 8, 1)
+               err_copy = glGetError()
+               buf2 = (ctypes.c_ubyte * (8*8*4))()
+               glGetTextureSubImage(raw_copy, 0, 0, 0, 0, 8, 8, 1, GL_RGBA, GL_UNSIGNED_BYTE, ctypes.sizeof(buf2), buf2)
+               err_get2 = glGetError()
+               print('::notice::PROBE %s FRAMEBUFFER_SRGB=%d fbo_complete=0x%x(encoding 0x%x) errs(%x,%x,%x,%x,%x) srgb_direct=%s raw_copy=%s' % (label, state.value, status, enc.value, err_before, err_clear, err_check, err_get, err_copy, str(list(buf[:4])), str(list(buf2[:4]))))
            probe('A-disabled', False)
            probe('B-enabled', True)
           except Exception as e:
