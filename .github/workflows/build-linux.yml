@@ -185,28 +185,21 @@ jobs:
       - name: Readback probe (TEMP)
         continue-on-error: true
         run: |
+          python3 -m pip install --quiet numpy pillow 2>/dev/null || pip install --quiet numpy pillow
           python3 - <<'PYEOF'
-          import glob, os, re, traceback
+          import glob, os, gzip, base64, traceback
           def notice(tag, text):
               print('::notice::%s %s' % (tag, text[:2900]))
           try:
-              import numpy as np
-              from PIL import Image
-              RES = 'RendererTestOutput/Images_Result'
-              files = sorted(glob.glob(RES + '/*Readback*.png'))
-              notice('RBFILES', 'n=%d %s' % (len(files), ' '.join(os.path.basename(f) for f in files)))
-              cur = None
-              pairs = []
-              with open('renderertest-clean.log', errors='ignore') as fh:
-                  for line in fh:
-                      m = re.search(r"Executing Sub-Test: '([^']+)'", line)
-                      if m:
-                          cur = m.group(1); continue
-                      m = re.search(r"MSE of (\d+) exceeds threshold of (\d+) for image 'Images_Reference/([^']+)'", line)
-                      if m:
-                          pairs.append('%s|%s|%s/%s' % (cur, m.group(3), m.group(1), m.group(2)))
-              rb = [p for p in pairs if 'Readback' in p]
-              notice('RBPAIRS', ' ~ '.join(rb))
+              out = []
+              for f in sorted(glob.glob('RendererTestOutput/Images_Result/*Readback*.png')):
+                  with open(f, 'rb') as fh:
+                      raw = fh.read()
+                  out.append('%s|%s' % (os.path.basename(f)[:-4], base64.b64encode(gzip.compress(raw, 9)).decode()))
+              # reference images cannot be reconstructed from the repo, so ship their sizes only
+              notice('RBIMAGES', ' ; '.join(out))
+              refl = sorted(os.listdir('Data/UnitTests/RendererTest/Images_Reference'))
+              notice('RBREFLIST', ' '.join(refl))
           except Exception:
               notice('RBERROR', traceback.format_exc().replace(chr(10), ' | '))
           PYEOF
