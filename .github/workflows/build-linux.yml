@@ -427,6 +427,29 @@ jobs:
               if raw < fy * 0.5: raw_much_better += 1
           print('::notice::FORENSICS-SUMMARY files=%d noref=%d avg_raw_mse=%.0f avg_flipy_mse=%.0f flipy_much_better=%d raw_much_better=%d' % (n, noref, tot_raw / max(n, 1), tot_fy / max(n, 1), fy_much_better, raw_much_better))
           print('::notice::FORENSICS ' + '~'.join(rows))
+          # Emit a coarse ASCII map of where capture differs from ref, for the interesting files
+          DUMP = ['AdvancedFeatures_05_-_Compute_005','AdvancedFeatures_07_-_ProxyTexture_005','AdvancedFeatures_04_-_Tessellation_005','PipelineStates_09_-_GenerateMipMaps_005','PipelineStates_08_-_Texture2DArray_005','PipelineStates_07_-_Texture2D_005','PipelineStates_06_-_StructuredBuffer_008','AdvancedFeatures_06_-_FloatSampling_005','AdvancedFeatures_01_-_ReadRenderTarget_005','Basics_Rasterizer_States_010']
+          for cap in sorted(glob.glob(RES + '/*.png')):
+              name = os.path.basename(cap)[:-4]
+              if name not in DUMP:
+                  continue
+              ref_path = None
+              for t in TAGS:
+                  p = os.path.join(REFDIR, name + t + '.png')
+                  if os.path.exists(p):
+                      ref_path = p; break
+              if ref_path is None:
+                  continue
+              a = np.asarray(Image.open(cap).convert('RGBA'), dtype=np.float32)
+              b = np.asarray(Image.open(ref_path).convert('RGBA'), dtype=np.float32)
+              d = np.abs(a - b).max(axis=-1)
+              mask = (d > 40).astype(np.uint8) + (d > 10).astype(np.uint8)  # 1 or 2; 2 means >40
+              mimg = Image.fromarray(mask, 'L').resize((48, 14), Image.NEAREST)
+              mm = np.asarray(mimg)
+              lines = []
+              for y in range(mm.shape[0]):
+                  lines.append(''.join('#' if v >= 2 else ('+' if v == 1 else '.') for v in mm[y]))
+              print('::notice::DUMP %s\n%s' % (name, '\n'.join(lines)))
           # Per-file A/B: compare sRGB-encode of the captured image vs the capture itself,
           # to check the FRAMEBUFFER_SRGB fix hypothesis against the references.
           def srgb_encode(x):
