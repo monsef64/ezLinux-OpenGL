@@ -193,6 +193,10 @@ jobs:
           EGL_OPENGL_API = 0x30A2
           EGL_NONE = 0x3038
           EGL_RENDERABLE_TYPE = 0x3040
+          EGL_SURFACE_TYPE = 0x3033
+          EGL_PBUFFER_BIT = 0x0001
+          EGL_WIDTH = 0x3057
+          EGL_HEIGHT = 0x3056
           EGL_OPENGL_BIT = 0x0008
           EGL_CONTEXT_MAJOR_VERSION = 0x3098
           EGL_CONTEXT_MINOR_VERSION = 0x30FB
@@ -210,7 +214,7 @@ jobs:
           ok = libegl.eglInitialize(display, ctypes.byref(major), ctypes.byref(minor))
           print('::notice::PROBE eglInitialize=%d EGL %d.%d' % (ok, major.value, minor.value))
           libegl.eglBindAPI(EGL_OPENGL_API)
-          cfg_attribs = (ctypes.c_int * 4)(EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE, EGL_NONE)
+          cfg_attribs = (ctypes.c_int * 6)(EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE, EGL_NONE)
           num_cfg = ctypes.c_int()
           config = ctypes.c_void_p()
           ok = libegl.eglChooseConfig(display, cfg_attribs, ctypes.byref(config), 1, ctypes.byref(num_cfg))
@@ -224,8 +228,14 @@ jobs:
           print('::notice::PROBE eglCreateContext ->', context)
           if not context:
               print('::notice::PROBE eglGetError', hex(libegl.eglGetError())); sys.exit(0)
-          ok = libegl.eglMakeCurrent(display, None, None, context)
-          print('::notice::PROBE eglMakeCurrent(surfaceless) ok=%d' % ok)
+          pbuf_attribs = (ctypes.c_int * 6)(EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE, EGL_NONE)
+          pbuffer = libegl.eglCreatePbufferSurface(display, config, pbuf_attribs)
+          print('::notice::PROBE eglCreatePbufferSurface ->', pbuffer)
+          if not pbuffer:
+              print('::notice::PROBE eglGetError', hex(libegl.eglGetError())); sys.exit(0)
+          libegl.eglMakeCurrent.restype = ctypes.c_uint
+          ok = libegl.eglMakeCurrent(display, pbuffer, pbuffer, context)
+          print('::notice::PROBE eglMakeCurrent(pbuffer) ok=%d' % ok)
           if not ok:
               print('::notice::PROBE eglGetError', hex(libegl.eglGetError())); sys.exit(0)
           def glfun(name, restype, *argtypes):
