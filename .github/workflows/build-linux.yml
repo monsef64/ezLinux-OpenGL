@@ -182,33 +182,6 @@ jobs:
             echo "::warning::RendererTest reported failing suites. Expected until OpenGL reference images are captured; inspect the RendererTestOutput artifact."
           fi
 
-      - name: Readback probe (TEMP)
-        continue-on-error: true
-        run: |
-          export EGL_PLATFORM=surfaceless
-          export LIBGL_ALWAYS_SOFTWARE=1
-          for F in RGBAInt RGBUInt RByteNormalized RGBAShortNormalized; do
-            ./Output/Bin/LinuxNinjaGccDebug64/RendererTest -noGui true -headless true -renderer OpenGL \
-              -outputDir "$PWD/RTOut_$F" -filter "$F" > "log_$F.txt" 2>&1 || true
-            echo "::notice::F$F === $(grep -E 'Tests (failed|passed)' "log_$F.txt" | tail -2 | tr '\n' ' ')"
-          done
-          python3 -m pip install --quiet pillow 2>/dev/null || pip install --quiet pillow
-          python3 - <<'PYEOF'
-          import glob, os, gzip, base64, traceback
-          def notice(tag, text):
-              print('::notice::%s %s' % (tag, text[:2900]))
-          try:
-              from PIL import Image
-              for f in sorted(glob.glob('RTOut_*/Images_Result/*Readback_Upload*.png')):
-                  sub = f.split('/')[0]
-                  with open('/tmp/s.png', 'wb') as fh:
-                      Image.open(f).convert('RGBA').save(fh, 'PNG', optimize=True)
-                  raw = open('/tmp/s.png', 'rb').read()
-                  print('::notice::CAP%s %s' % (sub.replace('RTOut_', '_'), base64.b64encode(gzip.compress(raw, 9)).decode()))
-          except Exception:
-              notice('RBERROR', traceback.format_exc().replace(chr(10), ' | '))
-          PYEOF
-
       - name: Artifact - RendererTest output
         if: always()
         uses: actions/upload-artifact@v7
