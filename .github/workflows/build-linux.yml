@@ -171,20 +171,14 @@ jobs:
           set -e
           echo "RendererTest exit code: $code"
           tail -150 renderertest.log
-          echo "=== summary lines as annotations ==="
-          grep -E "Tests (failed|passed)" renderertest.log | tail -2 | while read -r line; do echo "::notice::${line:0:300}"; done
-          echo "=== failing sub-tests as annotations (capped) ==="
-          grep -E "(Test|Sub-Test) '[^']*' failed" renderertest.log | cut -c1-250 | head -12 | while read -r line; do echo "::notice::${line:0:290}"; done
-          echo "=== error detail lines (file:line / ezLog Error), top hits ==="
+          echo "=== consolidated diagnostics as two annotations (Checks API caps displayed annotations) ==="
           sed -r 's/\x1b\[[0-9;]*m//g' renderertest.log > renderertest-clean.log
-          grep -E "ezLog Error|EZ_TEST_|Line: |Error: " renderertest-clean.log | sed -r 's/\[[0-9]+m//g; s/^ *//; s/[0-9a-fA-F]\{6,\}/HEX/g' | cut -c1-150 | sort | uniq -c | sort -rn | head -30 | while read -r line; do echo "::notice::${line:0:290}"; done
-          echo "=== consolidated diagnostics as a single annotation ==="
-          sed -r 's/\x1b\[[0-9;]*m//g' renderertest.log > renderertest-clean.log
-          L=$(wc -l < renderertest-clean.log)
-          TAIL=$(tail -10 renderertest-clean.log | sed 's/^ *//' | tr -d '\r' | cut -c1-160 | sed '/^$/d' | tr '\n' '~' )
-          echo "::notice::lines=$L tail: ${TAIL:0:2900}"
-          ALLE=$(grep -E "ezLog Error|^Error:" renderertest-clean.log | sed 's/^ *//' | cut -c1-130 | sed 's/[0-9a-fA-F]\{6,\}/HEX/g' | sort | uniq -c | sort -rn | head -25 | sed 's/^/  /' | tr '\n' '~')
-          echo "::notice::allerrors: ${ALLE:0:2900}"
+          FAILING=$(grep -E "(Test|Sub-Test) '[^']*' failed" renderertest-clean.log | sed 's/ ([0-9.]* sec)\.//' | cut -c1-160 | tr '\n' '~')
+          SUMMARY=$(grep -E "Tests (failed|passed)" renderertest-clean.log | tail -2 | tr '\n' '~')
+          echo "::notice::failing: ${FAILING} | ${SUMMARY}"
+          DETAILS=$(grep -E "^Error: |ezLog Error" renderertest-clean.log | sed 's/^ *//' | cut -c1-200 | head -20 | tr '\n' '~')
+          ALLE=$(grep -E "ezLog Error|^Error:" renderertest-clean.log | sed 's/^ *//' | cut -c1-130 | sed 's/[0-9a-fA-F]\{6,\}/HEX/g' | sort | uniq -c | sort -rn | head -12 | sed 's/^/  /' | tr '\n' '~')
+          echo "::notice::errors: ${DETAILS} || uniq: ${ALLE}"
           if grep -qE "Tests failed: [1-9]" renderertest.log; then
             echo "::warning::RendererTest reported failing suites. Expected until OpenGL reference images are captured; inspect the RendererTestOutput artifact."
           fi
