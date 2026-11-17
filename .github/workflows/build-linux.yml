@@ -418,6 +418,48 @@ jobs:
                glDeleteTextures(1, ctypes.byref(tex))
                decoded.append('%s/%s(err=%x/%x/%x)mean=%s,a=%.1f,nonblack=%.3f' % (tag, cs, e1, e2, e3, '/'.join(str(v) for v in rgb_mean), a_mean, nonblack))
            print('::notice::DECODERESULT ' + ' ~ '.join(decoded))
+
+           # Mip-chain upload probe: mirror ezGALTextureOpenGL::UploadInitialData for the real DDS assets,
+           # allocating the full allocated chain (9 levels) and uploading each mip, then read back mip 0.
+           # This reproduces what the engine does, not a single-level test.
+           chain = [('DXT3', 0x8C4E, 8 if False else 16, 'ezLogo_DXT3_Mips_D.dds'),
+                    ('DXT5', 0x8C4F, 16, 'ezLogo_DXT5_Mips_D.dds'),
+                    ('DXT1', 0x8C4D, 8, 'ezLogo_DXT1_Mips_D.dds')]
+           out2 = []
+           for tag, ifmt, bs, fname in chain:
+               d = open(TEXDIR + fname, 'rb').read()
+               hgt, w = struct.unpack('<II', d[12:20])
+               mips, = struct.unpack('<I', d[28:32])
+               nlev = mips if mips else 1
+               tex = ctypes.c_uint(0)
+               glCreateTextures(GL_TEXTURE_2D, 1, ctypes.byref(tex))
+               glTextureStorage2D(tex, nlev, ifmt, w, hgt)
+               estor = glGetError()
+               off = 128
+               errs = []
+               for lev in range(nlev):
+                   lw = max(1, w >> lev)
+                   lh = max(1, hgt >> lev)
+                   need = ((lw + 3) // 4) * ((lh + 3) // 4) * bs
+                   payload = d[off:off + need]
+                   off += need
+                   if len(payload) != need:
+                       errs.append('short%d' % lev); continue
+                   buf = (ctypes.c_ubyte * need).from_buffer_copy(payload)
+                   glCompressedTextureSubImage2D(tex, lev, 0, 0, lw, lh, ifmt, need, buf)
+                   e = glGetError()
+                   if e != 0:
+                       errs.append('%d:0x%x' % (lev, e))
+               pg = ctypes.c_int(0)
+               glGetTexParameteriv = glfun('glGetTexParameteriv', None, ctypes.c_uint, ctypes.c_uint, ctypes.POINTER(ctypes.c_int))
+               glGetTexParameteriv(tex, 0x100F, ctypes.byref(pg))  # GL_TEXTURE_IMMUTABLE_FORMAT
+               outb = (ctypes.c_ubyte * (w * hgt * 4))()
+               glGetTextureImage(tex, 0, GL_RGBA, GL_UNSIGNED_BYTE, len(outb), outb)
+               vals = list(outb)
+               rgb = [round(sum(vals[i::4]) / (w * hgt), 1) for i in range(3)]
+               glDeleteTextures(1, ctypes.byref(tex))
+               out2.append('%s(lev=%d,stor=0x%x,immut=%d,errs=%s,rgb=%s)' % (tag, nlev, estor, pg.value, ','.join(errs) if errs else 'none', '/'.join(str(v) for v in rgb)))
+           print('::notice::CHAINRESULT ' + ' ~ '.join(out2))
           except Exception as e:
               import traceback
               tb = traceback.format_exc().replace('\n', ' | ')
