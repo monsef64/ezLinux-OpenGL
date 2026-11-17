@@ -239,7 +239,7 @@ jobs:
           if not ok:
               print('::notice::PROBE eglGetError', hex(libegl.eglGetError())); sys.exit(0)
           def glfun(name, restype, *argtypes):
-              addr = libegl.eglGetProcAddress(name)
+              addr = libegl.eglGetProcAddress(name.encode('ascii'))
               return ctypes.CFUNCTYPE(restype, *argtypes)(addr)
           GL_VERSION = 0x1F02
           glGetString = glfun('glGetString', ctypes.c_char_p, ctypes.c_uint)
