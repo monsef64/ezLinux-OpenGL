@@ -74,8 +74,6 @@ namespace
   };
 } // namespace
 
-
-
 ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
 {
   m_pDevice = pDevice;
