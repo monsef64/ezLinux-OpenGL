@@ -182,6 +182,128 @@ jobs:
             echo "::warning::RendererTest reported failing suites. Expected until OpenGL reference images are captured; inspect the RendererTestOutput artifact."
           fi
 
+      - name: Probe - sRGB write/readback behavior (TEMP)
+        if: always()
+        run: |
+          export EGL_PLATFORM=surfaceless
+          export LIBGL_ALWAYS_SOFTWARE=1
+          python3 - <<'PYEOF'
+          import ctypes, sys
+          EGL_PLATFORM_SURFACELESS = 0x31DD
+          EGL_OPENGL_API = 0x30A2
+          EGL_NONE = 0x3038
+          EGL_RENDERABLE_TYPE = 0x3040
+          EGL_OPENGL_BIT = 0x0008
+          EGL_CONTEXT_MAJOR_VERSION = 0x3098
+          EGL_CONTEXT_MINOR_VERSION = 0x30FB
+          EGL_CONTEXT_OPENGL_PROFILE_MASK = 0x30FD
+          EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT = 0x0001
+          libegl = ctypes.CDLL('libEGL.so.1')
+          libegl.eglGetDisplay.restype = ctypes.c_void_p
+          libegl.eglGetProcAddress.restype = ctypes.c_void_p
+          libegl.eglGetPlatformDisplay.restype = ctypes.c_void_p
+          libegl.eglGetPlatformDisplay.argtypes = [ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+          display = libegl.eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS, None, None)
+          if not display:
+              print('::notice::PROBE eglGetPlatformDisplay failed'); sys.exit(0)
+          major, minor = ctypes.c_int(), ctypes.c_int()
+          ok = libegl.eglInitialize(display, ctypes.byref(major), ctypes.byref(minor))
+          print('::notice::PROBE eglInitialize=%d EGL %d.%d' % (ok, major.value, minor.value))
+          libegl.eglBindAPI(EGL_OPENGL_API)
+          cfg_attribs = (ctypes.c_int * 4)(EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE, EGL_NONE)
+          num_cfg = ctypes.c_int()
+          config = ctypes.c_void_p()
+          ok = libegl.eglChooseConfig(display, cfg_attribs, ctypes.byref(config), 1, ctypes.byref(num_cfg))
+          print('::notice::PROBE eglChooseConfig ok=%d num=%d' % (ok, num_cfg.value))
+          if num_cfg.value == 0:
+              print('::notice::PROBE no EGL config'); sys.exit(0)
+          ctx_attribs = (ctypes.c_int * 8)(EGL_CONTEXT_MAJOR_VERSION, 4, EGL_CONTEXT_MINOR_VERSION, 5,
+                                            EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+                                            EGL_NONE, EGL_NONE)
+          context = libegl.eglCreateContext(display, config, None, ctx_attribs)
+          print('::notice::PROBE eglCreateContext ->', context)
+          if not context:
+              print('::notice::PROBE eglGetError', hex(libegl.eglGetError())); sys.exit(0)
+          ok = libegl.eglMakeCurrent(display, None, None, context)
+          print('::notice::PROBE eglMakeCurrent(surfaceless) ok=%d' % ok)
+          if not ok:
+              print('::notice::PROBE eglGetError', hex(libegl.eglGetError())); sys.exit(0)
+          def glfun(name, restype, *argtypes):
+              addr = libegl.eglGetProcAddress(name)
+              return ctypes.CFUNCTYPE(restype, *argtypes)(addr)
+          GL_VERSION = 0x1F02
+          glGetString = glfun('glGetString', ctypes.c_char_p, ctypes.c_uint)
+          glGetIntegerv = glfun('glGetIntegerv', None, ctypes.c_uint, ctypes.c_void_p)
+          glGenTextures = glfun('glGenTextures', None, ctypes.c_int, ctypes.POINTER(ctypes.c_uint))
+          glBindTexture = glfun('glBindTexture', None, ctypes.c_uint, ctypes.c_uint)
+          glTexImage2D = glfun('glTexImage2D', None, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
+          glTexParameteri = glfun('glTexParameteri', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_int)
+          glGenFramebuffers = glfun('glGenFramebuffers', None, ctypes.c_int, ctypes.POINTER(ctypes.c_uint))
+          glBindFramebuffer = glfun('glBindFramebuffer', None, ctypes.c_uint, ctypes.c_uint)
+          glFramebufferTexture2D = glfun('glFramebufferTexture2D', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_int)
+          glClearColor = glfun('glClearColor', None, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float)
+          glClear = glfun('glClear', None, ctypes.c_uint)
+          glGetTexImage = glfun('glGetTexImage', None, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
+          glCopyImageSubData = glfun('glCopyImageSubData', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int)
+          GL_TEXTURE_2D = 0x0DE1
+          GL_FRAMEBUFFER = 0x8D40
+          GL_COLOR_ATTACHMENT0 = 0x8CE0
+          GL_SRGB8_ALPHA8 = 0x8E47
+          GL_RGBA8 = 0x8058
+          GL_RGBA = 0x1908
+          GL_UNSIGNED_BYTE = 0x1401
+          GL_COLOR_BUFFER_BIT = 0x4000
+          GL_FRAMEBUFFER_SRGB = 0x8DB9
+          print('::notice::PROBE GL_VERSION =', glGetString(GL_VERSION).decode())
+          fb_srgb = ctypes.c_int32()
+          glGetIntegerv(GL_FRAMEBUFFER_SRGB, ctypes.byref(fb_srgb))
+          print('::notice::PROBE GL_FRAMEBUFFER_SRGB default =', fb_srgb.value)
+          GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER = 0x2801, 0x2800
+          GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T = 0x2802, 0x2803
+          GL_NEAREST, GL_CLAMP_TO_EDGE = 0x2600, 0x812F
+          def make_tex(fmt):
+              t = ctypes.c_uint(0)
+              glGenTextures(1, ctypes.byref(t))
+              glBindTexture(GL_TEXTURE_2D, t.value)
+              glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+              glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+              glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+              glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+              glTexImage2D(GL_TEXTURE_2D, 0, fmt, 8, 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
+              glBindTexture(GL_TEXTURE_2D, 0)
+              return t.value
+          def clear_on_fbo(tex):
+              fbo = ctypes.c_uint(0)
+              glGenFramebuffers(1, ctypes.byref(fbo))
+              glBindFramebuffer(GL_FRAMEBUFFER, fbo.value)
+              glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0)
+              glClearColor(0.5, 0.5, 0.5, 1.0)
+              glClear(GL_COLOR_BUFFER_BIT)
+              glBindFramebuffer(GL_FRAMEBUFFER, 0)
+              return fbo.value
+          srgb_tex = make_tex(GL_SRGB8_ALPHA8)
+          unorm_tex = make_tex(GL_RGBA8)
+          clear_on_fbo(srgb_tex)
+          data = (ctypes.c_ubyte * (8*8*4))()
+          glBindTexture(GL_TEXTURE_2D, srgb_tex)
+          glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
+          glBindTexture(GL_TEXTURE_2D, 0)
+          print('::notice::PROBE sRGB FBO glClear(0.5) -> glGetTexImage(sRGB) bytes =', list(data[:4]))
+          clear_on_fbo(unorm_tex)
+          data2 = (ctypes.c_ubyte * (8*8*4))()
+          glBindTexture(GL_TEXTURE_2D, unorm_tex)
+          glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, data2)
+          glBindTexture(GL_TEXTURE_2D, 0)
+          print('::notice::PROBE UNORM FBO glClear(0.5) -> glGetTexImage bytes =', list(data2[:4]))
+          raw_copy = make_tex(GL_RGBA8)
+          glCopyImageSubData(srgb_tex, GL_TEXTURE_2D, 0, 0, 0, 0, raw_copy, GL_TEXTURE_2D, 0, 0, 0, 0, 8, 8, 1)
+          data3 = (ctypes.c_ubyte * (8*8*4))()
+          glBindTexture(GL_TEXTURE_2D, raw_copy)
+          glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, data3)
+          glBindTexture(GL_TEXTURE_2D, 0)
+          print('::notice::PROBE sRGB stored -> glCopyImageSubData -> UNORM readback bytes =', list(data3[:4]))
+          PYEOF
+
       - name: Forensics - analyze captured images (TEMP)
         if: always()
         run: |
