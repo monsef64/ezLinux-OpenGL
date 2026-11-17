@@ -38,7 +38,11 @@ ezResult ezGALReadbackTextureOpenGL::InitPlatform(ezGALDevice* pDevice)
         glTextureStorage3D(m_uiTexture, uiMipLevels, eInternalFormat, static_cast<GLsizei>(m_Description.m_uiWidth), static_cast<GLsizei>(m_Description.m_uiHeight), static_cast<GLsizei>(m_Description.m_uiArraySize));
         break;
       case ezGALTextureType::TextureCube:
+        // GL_TEXTURE_CUBE_MAP is not valid for glTextureStorage3D; cube maps use 2D storage (6 faces from the target).
+        glTextureStorage2D(m_uiTexture, uiMipLevels, eInternalFormat, static_cast<GLsizei>(m_Description.m_uiWidth), static_cast<GLsizei>(m_Description.m_uiHeight));
+        break;
       case ezGALTextureType::TextureCubeArray:
+        // Cube arrays use 3D storage with arraySize * 6 layers.
         glTextureStorage3D(m_uiTexture, uiMipLevels, eInternalFormat, static_cast<GLsizei>(m_Description.m_uiWidth), static_cast<GLsizei>(m_Description.m_uiHeight), static_cast<GLsizei>(m_Description.m_uiArraySize * 6));
         break;
       default:
