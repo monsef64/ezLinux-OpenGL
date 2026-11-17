@@ -99,6 +99,12 @@ ezResult ezGALTextureOpenGL::InitPlatform(ezGALDevice* pDevice, ezArrayPtr<ezGAL
     return EZ_FAILURE;
   }
 
+  if (ezGALResourceFormat::IsBlockCompressed(m_Description.m_Format))
+  {
+    GLenum ePre = glGetError(); // clear stale errors
+    EZ_IGNORE_UNUSED(ePre);
+  }
+
   if (!m_bMSAA && !pInitialData.IsEmpty())
   {
     if (UploadInitialData(pInitialData).Failed())
@@ -107,6 +113,14 @@ ezResult ezGALTextureOpenGL::InitPlatform(ezGALDevice* pDevice, ezArrayPtr<ezGAL
       m_uiTexture = 0;
       return EZ_FAILURE;
     }
+  }
+
+  if (ezGALResourceFormat::IsBlockCompressed(m_Description.m_Format))
+  {
+    GLenum ePost = glGetError();
+    ezLog::Warning("BC3PROBE fmt={0} w={1} h={2} mips={3} faces={4} nInit={5} glerr=0x{6}",
+      m_Description.m_Format.GetValue(), m_Description.m_uiWidth, m_Description.m_uiHeight,
+      m_Description.m_uiMipLevelCount, m_uiArraySize, pInitialData.GetCount(), (ezUInt32)ePost);
   }
 
   return EZ_SUCCESS;

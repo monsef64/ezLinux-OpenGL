@@ -182,6 +182,8 @@ jobs:
           echo "::notice::msemap ${MSELINES:0:2500}"
           ERRLINES=$(grep -E "ezLog Error|ezLog Warning|Assertion|EZ_ASSERT|not supported|Unsupported|failed to|Failed to" renderertest-clean.log | grep -viE "Image Comparison Failed|could not be read" | sed -E 's/^ +//' | sort -u | head -40 | cut -c1-190 | tr '\n' '~')
           echo "::notice::errlines ${ERRLINES:0:2900}"
+          BCP=$(grep -E "BC3PROBE" renderertest-clean.log | sed -E 's/^ +//' | sort -u | cut -c1-150 | tr '\n' '~')
+          echo "::notice::bcprobe ${BCP:0:2900}"
           HISTO=$(awk '/Executing Test:|Executing Sub-Test:/{cur=$0; next} /ezLog Error|Failure: |Comparison Image|Image Comparison Failed|queryValues|Block:|mismatch/{n[cur" +++ "substr($0,1,150)]++} END{for (k in n) printf "%d %s~", n[k], k}' renderertest-clean.log | sed 's/^ *//' | sort -rn | head -30)
           echo "::notice::per-test-errors: ${HISTO:0:2900}"
           if grep -qE "Tests failed: [1-9]" renderertest.log; then
