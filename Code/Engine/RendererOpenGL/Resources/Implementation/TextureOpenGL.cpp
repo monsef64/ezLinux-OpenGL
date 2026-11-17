@@ -434,10 +434,10 @@ ezResult ezGALTextureOpenGL::UploadInitialData(ezArrayPtr<ezGALSystemMemoryDescr
         GLenum eAfter = glGetError();
         if (eAfter != GL_NO_ERROR)
         {
-          ezLog::Warning("UPDFAIL fmt={0} mip={1} {2}x{3} blk={4} size={5} rowPitch={6} tight={7} repacked={8} ifmt=0x{9} tgt=0x{10} slice={11} err=0x{12}",
-            m_Description.m_Format.GetValue(), uiMipLevel, uiWidth, uiHeight, uiBlockBytes, (ezUInt32)uiImageSize,
-            desc.m_uiRowPitch, uiTightPitch, repacked.IsEmpty() ? 0 : 1,
-            (ezUInt32)ezMappingTables::ToGLTextureInternalFormat(m_Description.m_Format), (ezUInt32)eTarget, uiSlice, (ezUInt32)eAfter);
+          ezLog::Warning("UPDFAIL fmt={0} mip={1} size={2} blk={3} img={4} rp={5} tight={6} rep={7} tgt={8} sl={9} err={10}",
+            m_Description.m_Format.GetValue(), uiMipLevel, uiWidth, uiBlockBytes, (ezUInt32)uiImageSize,
+            desc.m_uiRowPitch, uiTightPitch, repacked.IsEmpty() ? 0 : 1, (ezUInt32)eTarget, uiSlice, (ezUInt32)eAfter);
+          ezLog::Warning("UPDFMT ={0}", (ezUInt32)ezMappingTables::ToGLTextureInternalFormat(m_Description.m_Format));
         }
       }
       return EZ_SUCCESS;
