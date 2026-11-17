@@ -1239,8 +1239,27 @@ void ezGALDeviceOpenGL::FillCapabilitiesPlatform()
       support.Add(ezGALResourceFormatSupport::VertexAttribute);
     }
 
-    // Color and depth formats can be used as render targets; GL only validates this at FBO completeness time.
-    support.Add(ezGALResourceFormatSupport::RenderTarget);
+    // Ask GL which formats are renderable instead of assuming it; block compressed formats
+    // defeat FBO completeness at draw time and must not advertise RenderTarget support.
+    {
+      GLint iRenderable = 0;
+      if (glGetInternalformativ != nullptr)
+      {
+        GLenum eRenderableQuery = GL_COLOR_RENDERABLE;
+        if (ezGALResourceFormat::IsDepthFormat(format))
+          eRenderableQuery = GL_DEPTH_RENDERABLE;
+        else if (ezGALResourceFormat::IsStencilFormat(format))
+          eRenderableQuery = GL_STENCIL_RENDERABLE;
+
+        glGetInternalformativ(GL_TEXTURE_2D, eInternalFormat, eRenderableQuery, 1, &iRenderable);
+      }
+      else if (!ezMappingTables::IsBlockCompressedFormat(format, uiBlockBytes))
+      {
+        iRenderable = 1;
+      }
+      if (iRenderable > 0)
+        support.Add(ezGALResourceFormatSupport::RenderTarget);
+    }
 
     // Query MSAA sample counts for 2D multisample targets
     GLint iSamplesCount = 0;
