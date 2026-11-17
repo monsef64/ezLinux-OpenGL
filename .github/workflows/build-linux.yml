@@ -280,7 +280,10 @@ jobs:
            glGetTexImage = glfun('glGetTexImage', None, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
            glTextureSubImage2D = glfun('glTextureSubImage2D', None, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
            glReadPixels = glfun('glReadPixels', None, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p)
+           glClearColor = glfun('glClearColor', None, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float)
+           glClear = glfun('glClear', None, ctypes.c_uint)
            GL_READ_FRAMEBUFFER = 0x8CA8
+           GL_COLOR_BUFFER_BIT = 0x4000
            def probe(label, srgb_enable):
               if srgb_enable: glEnable(GL_FRAMEBUFFER_SRGB)
               else: glDisable(GL_FRAMEBUFFER_SRGB)
@@ -310,8 +313,9 @@ jobs:
               glNamedFramebufferTexture(fbo, GL_COLOR_ATTACHMENT0, tex, 0)
               glNamedFramebufferDrawBuffer(fbo, GL_COLOR_ATTACHMENT0)
               status = glCheckNamedFramebufferStatus(fbo, GL_DRAW_FRAMEBUFFER)
-              col = (ctypes.c_float * 4)(0.5, 0.5, 0.5, 1.0)
-              glNamedFramebufferClearBufferfv(fbo, GL_COLOR, 0, col)
+              glBindFramebuffer(GL_FRAMEBUFFER, fbo)
+              glClearColor(0.5, 0.5, 0.5, 1.0)
+              glClear(GL_COLOR_BUFFER_BIT)
               err_clear = glGetError()
               bufC = (ctypes.c_ubyte * (8*8*4))()
               glGetTextureSubImage(tex, 0, 0, 0, 0, 8, 8, 1, GL_RGBA, GL_UNSIGNED_BYTE, 256, bufC)
@@ -325,6 +329,7 @@ jobs:
               glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo)
               glReadPixels(0, 0, 8, 8, GL_RGBA, GL_UNSIGNED_BYTE, bufE)
               glBindFramebuffer(GL_READ_FRAMEBUFFER, 0)
+              glBindFramebuffer(GL_FRAMEBUFFER, 0)
               err_e = glGetError()
               probe_results.append('%s GB_SRGB=%d fbo=0x%x errs(up=%x,a=%x,b=%x,clr=%x,c=%x,d=%x,e=%x) upload(legacy=%s,dsa=%s) clear(direct=%s,legacy=%s,readpx=%s)' % (
                   label, state.value, status, err_up, err_a, err_b, err_clear, err_c, err_d, err_e,
