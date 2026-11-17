@@ -449,7 +449,7 @@ jobs:
               lines = []
               for y in range(mm.shape[0]):
                   lines.append(''.join('#' if v >= 2 else ('+' if v == 1 else '.') for v in mm[y]))
-              print('::notice::DUMP %s\n%s' % (name, '\n'.join(lines)))
+              print('::notice::DUMP %s | %s' % (name, ' | '.join(lines)))
           # Per-file A/B: compare sRGB-encode of the captured image vs the capture itself,
           # to check the FRAMEBUFFER_SRGB fix hypothesis against the references.
           def srgb_encode(x):
