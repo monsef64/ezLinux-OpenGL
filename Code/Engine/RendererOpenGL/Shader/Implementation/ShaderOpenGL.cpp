@@ -253,17 +253,52 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
 
   ezStringBuilder stageGLSL[ezGALShaderStage::ENUM_COUNT];
 
-  // Set GLSL options and remap each stage.
-  for (ezUInt32 stage = 0; stage < ezGALShaderStage::ENUM_COUNT; stage++)
+  // Desktop GLSL cannot express blocks whose members use scalar packing with arbitrary 4 byte alignment (e.g. material structured buffers with ez's relaxed layout),
+  // even with enhanced layouts. Retrying the failed stage with Vulkan semantics lets SPIRV-Cross emit scalar block layout (GL_EXT_scalar_block_layout) instead.
+  // The emitted 'set = N' qualifiers are meaningless in desktop GL and are stripped again below.
+  auto StripSetQualifiers = [](ezStringBuilder& ref_sGLSL)
   {
-    spirv_cross::CompilerGLSL* pCompiler = compilers[stage];
-    if (pCompiler == nullptr)
-      continue;
+    ezStringBuilder sOut;
+    const ezUInt32 uiSize = ref_sGLSL.GetElementCount();
+    sOut.Reserve(uiSize);
+    ezStringView sRest = ref_sGLSL.GetView();
+    while (true)
+    {
+      const char* szFound = sRest.FindSubString("set = ");
+      if (szFound == nullptr)
+      {
+        sOut.Append(sRest);
+        break;
+      }
+      const size_t uiPrefix = static_cast<size_t>(szFound - sRest.GetStartPointer());
+      sOut.Append(ezStringView(sRest.GetStartPointer(), szFound));
 
+      const char* szNum = szFound + 6;
+      while (*szNum >= '0' && *szNum <= '9')
+        ++szNum;
+      if (*szNum == ',') // 'set = N, ' is always the first qualifier in a layout() list
+      {
+        ++szNum;
+        if (*szNum == ' ')
+          ++szNum;
+        sRest = ezStringView(szNum, sRest.GetEndPointer());
+      }
+      else
+      {
+        // Not in the expected form; keep the text as-is.
+        sOut.Append(ezStringView(szFound, szNum));
+        sRest = ezStringView(szNum, sRest.GetEndPointer());
+      }
+    }
+    ref_sGLSL = sOut;
+  };
+
+  auto ConvertStage = [&](spirv_cross::CompilerGLSL* pCompiler, ezUInt32 uiStage, bool bVulkanSemantics) -> ezResult
+  {
     spirv_cross::CompilerGLSL::Options options;
     options.version = 450;
     options.es = false;
-    options.vulkan_semantics = false;
+    options.vulkan_semantics = bVulkanSemantics;
     options.emit_push_constant_as_uniform_buffer = true;
     options.enable_420pack_extension = false;
     pCompiler->set_common_options(options);
@@ -301,14 +336,44 @@ ezResult ezGALShaderOpenGL::InitPlatform(ezGALDevice* pDevice)
       }
     }
 
+    stageGLSL[uiStage].Set(pCompiler->compile().c_str());
+    if (bVulkanSemantics)
+    {
+      StripSetQualifiers(stageGLSL[uiStage]);
+    }
+    return EZ_SUCCESS;
+  };
+
+  // Set GLSL options and remap each stage.
+  for (ezUInt32 stage = 0; stage < ezGALShaderStage::ENUM_COUNT; stage++)
+  {
+    spirv_cross::CompilerGLSL* pCompiler = compilers[stage];
+    if (pCompiler == nullptr)
+      continue;
+
     try
     {
-      stageGLSL[stage].Set(pCompiler->compile().c_str());
+      ConvertStage(pCompiler, stage, false).IgnoreResult();
     }
     catch (const spirv_cross::CompilerError& e)
     {
-      ezLog::Error("Failed to convert SPIR-V to GLSL for stage {0}: {1}", ezGALShaderStage::Names[stage], e.what());
-      return EZ_FAILURE;
+      // Retry the stage with Vulkan semantics so scalar-layout blocks can be emitted as scalar block layout.
+      ezLog::Info("Failed to convert stage {0} to desktop GLSL ({1}); retrying with scalar block layout.", ezGALShaderStage::Names[stage], e.what());
+      const ezGALShaderByteCode* pByteCode = m_Description.m_ByteCodes[stage].Borrow();
+      const ezUInt32* pSpirv = reinterpret_cast<const ezUInt32*>(pByteCode->GetByteCode());
+      const size_t uiSpirvCount = pByteCode->GetSize() / 4;
+      try
+      {
+        spirv_cross::CompilerGLSL retryCompiler(pSpirv, uiSpirvCount);
+        retryCompiler.build_dummy_sampler_for_combined_images();
+        retryCompiler.build_combined_image_samplers();
+        ConvertStage(&retryCompiler, stage, true).IgnoreResult();
+      }
+      catch (const spirv_cross::CompilerError& e2)
+      {
+        ezLog::Error("Failed to convert SPIR-V to GLSL for stage {0}: {1}", ezGALShaderStage::Names[stage], e2.what());
+        return EZ_FAILURE;
+      }
     }
   }
 
