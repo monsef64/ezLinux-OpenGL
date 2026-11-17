@@ -354,7 +354,7 @@ jobs:
            glGetIntegerv(GL_NUM_EXTENSIONS, ctypes.byref(nExt))
            exts = ' '.join(glGetStringi(GL_EXTENSIONS, i).decode() for i in range(nExt.value))
            dxt_exts = [e for e in exts.split() if 's3tc' in e.lower() or 'srgb' in e.lower()]
-           dxt_fmts = [('dxt1', 0x83F1), ('dxt3', 0x83F3), ('dxt5', 0x83F5), ('sdxt1', 0x8C4D), ('sdxt3', 0x8C4F), ('sdxt5', 0x8C51)]
+           dxt_fmts = [('dxt1', 0x83F1), ('dxt3', 0x83F2), ('dxt5', 0x83F3), ('sdxt1', 0x8C4D), ('sdxt3', 0x8C4E), ('sdxt5', 0x8C4F)]
            dxt_supported = []
            for name, fmt in dxt_fmts:
                val = ctypes.c_int(-1)
@@ -373,6 +373,47 @@ jobs:
                dxt_uploads.append('%s:stor=0x%x,upl=0x%x' % (name, e1, e2))
                glDeleteTextures(1, ctypes.byref(tex))
            print('::notice::DXTRESULT exts=%s support=%s uploads=%s' % (','.join(dxt_exts), ' '.join(dxt_supported), ' '.join(dxt_uploads)))
+
+           # Decode probe: upload each BCn asset's real mip 0 and read back decoded pixels via glGetTextureImage.
+           # Distinguishes "Mesa mis-decodes DXT5" from "ezGL uploads DXT5 wrongly".
+           import struct
+           glGetTextureImage = glfun('glGetTextureImage', None, ctypes.c_uint, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_void_p)
+           TEXDIR = 'Data/UnitTests/SharedData/Textures/'
+           cases = [('DXT1', 0x8C4D, 8, 'ezLogo_DXT1_Mips_D.dds', 'srgb'),
+                    ('DXT3', 0x8C4E, 16, 'ezLogo_DXT3_Mips_D.dds', 'srgb'),
+                    ('DXT5', 0x8C4F, 16, 'ezLogo_DXT5_Mips_D.dds', 'srgb'),
+                    ('DXT5', 0x83F3, 16, 'ezLogo_DXT5_Mips_D.dds', 'linear'),
+                    ('DXT1', 0x83F1, 8, 'ezLogo_DXT1_Mips_D.dds', 'linear')]
+           decoded = []
+           for tag, ifmt, bs, fname, cs in cases:
+               try:
+                   d = open(TEXDIR + fname, 'rb').read()
+               except Exception as ex:
+                   decoded.append('%s/%s=NOFILE' % (tag, cs)); continue
+               hdr = d[0:128]
+               w, hgt = struct.unpack('<II', hdr[16:24])
+               nblk = ((w + 3) // 4) * ((hgt + 3) // 4)
+               need = nblk * bs
+               payload = d[128:128 + need]
+               if len(payload) != need:
+                   decoded.append('%s/%s=SHORT(%d/%d)' % (tag, cs, len(payload), need)); continue
+               tex = ctypes.c_uint(0)
+               glCreateTextures(GL_TEXTURE_2D, 1, ctypes.byref(tex))
+               glTextureStorage2D(tex, 1, ifmt, w, hgt)
+               e1 = glGetError()
+               buf = (ctypes.c_ubyte * len(payload)).from_buffer_copy(payload)
+               glCompressedTextureSubImage2D(tex, 0, 0, 0, w, hgt, ifmt, len(payload), buf)
+               e2 = glGetError()
+               out = (ctypes.c_ubyte * (w * hgt * 4))()
+               glGetTextureImage(tex, 0, GL_RGBA, GL_UNSIGNED_BYTE, len(out), out)
+               e3 = glGetError()
+               vals = list(out)
+               rgb_mean = [round(sum(vals[i::4]) / (w * hgt), 1) for i in range(3)]
+               a_mean = round(sum(vals[3::4]) / (w * hgt), 1)
+               nonblack = round(1.0 - sum(1 for i in range(0, len(vals), 4) if vals[i] == 0 and vals[i+1] == 0 and vals[i+2] == 0) / (w * hgt), 3)
+               glDeleteTextures(1, ctypes.byref(tex))
+               decoded.append('%s/%s(err=%x/%x/%x)mean=%s,a=%.1f,nonblack=%.3f' % (tag, cs, e1, e2, e3, '/'.join(str(v) for v in rgb_mean), a_mean, nonblack))
+           print('::notice::DECODERESULT ' + ' ~ '.join(decoded))
           except Exception as e:
               import traceback
               tb = traceback.format_exc().replace('\n', ' | ')
