@@ -249,7 +249,7 @@ jobs:
            glNamedFramebufferTexture = glfun('glNamedFramebufferTexture', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_int)
            glNamedFramebufferDrawBuffer = glfun('glNamedFramebufferDrawBuffer', None, ctypes.c_uint, ctypes.c_uint)
            glCheckNamedFramebufferStatus = glfun('glCheckNamedFramebufferStatus', ctypes.c_uint, ctypes.c_uint, ctypes.c_uint)
-           glNamedFramebufferClearBufferfv = glfun('glNamedFramebufferClearBufferfv', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_float_p)
+           glNamedFramebufferClearBufferfv = glfun('glNamedFramebufferClearBufferfv', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.POINTER(ctypes.c_float))
            glGetTextureSubImage = glfun('glGetTextureSubImage', None, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_size_t, ctypes.c_void_p)
            glCopyImageSubData = glfun('glCopyImageSubData', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int)
            glGetNamedFramebufferAttachmentParameteriv = glfun('glGetNamedFramebufferAttachmentParameteriv', None, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.POINTER(ctypes.c_int))
