@@ -391,7 +391,7 @@ jobs:
                except Exception as ex:
                    decoded.append('%s/%s=NOFILE' % (tag, cs)); continue
                hdr = d[0:128]
-               w, hgt = struct.unpack('<II', hdr[16:24])
+               hgt, w = struct.unpack('<II', hdr[12:20])
                nblk = ((w + 3) // 4) * ((hgt + 3) // 4)
                need = nblk * bs
                payload = d[128:128 + need]
