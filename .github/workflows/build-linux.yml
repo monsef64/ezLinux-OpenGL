@@ -176,8 +176,8 @@ jobs:
           FAILING=$(grep -E "(Test|Sub-Test) '[^']*' failed" renderertest-clean.log | sed 's/ ([0-9.]* sec)\.//' | cut -c1-160 | tr '\n' '~')
           SUMMARY=$(grep -E "Tests (failed|passed)" renderertest-clean.log | tail -2 | tr '\n' '~')
           echo "::notice::failing: ${FAILING} | ${SUMMARY}"
-          DETAILS=$(grep -E "^Error: |ezLog Error" renderertest-clean.log | sed 's/^ *//' | cut -c1-200 | head -20 | tr '\n' '~')
-          ALLE=$(grep -E "ezLog Error|^Error:" renderertest-clean.log | sed 's/^ *//' | cut -c1-130 | sed 's/[0-9a-fA-F]\{6,\}/HEX/g' | sort | uniq -c | sort -rn | head -12 | sed 's/^/  /' | tr '\n' '~')
+          DETAILS=$(grep -E "Failure: |ezLog Error" renderertest-clean.log | sed 's/^ *//' | cut -c1-190 | head -18 | tr '\n' '~')
+          ALLE=$(grep -E "Failure: |ezLog Error" renderertest-clean.log | sed 's/^ *//' | cut -c1-130 | sed 's/[0-9a-fA-F]\{6,\}/HEX/g' | sed -E 's/[0-9]+/N/g' | sort | uniq -c | sort -rn | head -12 | sed 's/^/  /' | tr '\n' '~')
           echo "::notice::errors: ${DETAILS} || uniq: ${ALLE}"
           if grep -qE "Tests failed: [1-9]" renderertest.log; then
             echo "::warning::RendererTest reported failing suites. Expected until OpenGL reference images are captured; inspect the RendererTestOutput artifact."
