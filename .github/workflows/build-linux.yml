@@ -231,8 +231,13 @@ jobs:
           if not ok: sys.exit(1)
           def glfun(name, restype, *argtypes):
               addr = libegl.eglGetProcAddress(name.encode('ascii'))
+              print('::notice::PROBE glfun %s -> 0x%x' % (name, 0 if addr is None else addr))
+              if not addr:
+                  raise RuntimeError('NULL addr for ' + name)
               return ctypes.CFUNCTYPE(restype, *argtypes)(addr)
-          glGetString = glfun('glGetString', ctypes.c_char_p, ctypes.c_uint)
+          sys.stdout.flush()
+          try:
+           glGetString = glfun('glGetString', ctypes.c_char_p, ctypes.c_uint)
           glGetIntegerv = glfun('glGetIntegerv', None, ctypes.c_uint, ctypes.c_void_p)
           glGetError = glfun('glGetError', ctypes.c_uint)
           glIsEnabled = glfun('glIsEnabled', ctypes.c_ubyte, ctypes.c_uint)
@@ -299,8 +304,13 @@ jobs:
               glGetTextureSubImage(raw_copy, 0, 0, 0, 0, 8, 8, 1, GL_RGBA, GL_UNSIGNED_BYTE, ctypes.sizeof(buf2), buf2)
               err_get2 = glGetError()
               print('::notice::PROBE %s FRAMEBUFFER_SRGB=%d fbo_complete=0x%x(encoding 0x%x) errs(%x,%x,%x,%x,%x) srgb_direct=%s raw_copy=%s' % (label, state.value, status, enc.value, err_before, err_clear, err_check, err_get, err_copy, str(list(buf[:4])), str(list(buf2[:4]))))
-          probe('A-disabled', False)
-          probe('B-enabled', True)
+           probe('A-disabled', False)
+           probe('B-enabled', True)
+          except Exception as e:
+              import traceback
+              tb = traceback.format_exc().replace('\n', ' | ')
+              print('::warning::PROBE-EXCEPTION ' + tb[:1500])
+              sys.exit(1)
           PYEOF
 
       - name: Forensics - analyze captured images (TEMP)
